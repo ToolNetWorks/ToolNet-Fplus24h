@@ -3,7 +3,7 @@ from django.core.exceptions import (
 )
 from django.core.paginator import EmptyPage, Paginator
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import Http404
 from rest_framework import serializers
 from rest_framework.authentication import SessionAuthentication
@@ -28,6 +28,17 @@ class AlbumFilterSerializer(serializers.Serializer):
         max_value=50,
         default=10,
     )
+    search = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=100,
+        trim_whitespace=True,
+    )
+    enabled = serializers.BooleanField(required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["enabled"].default_empty_html = serializers.empty
 def resolve_pipeline(user, pipeline_id):
     if not user.is_active:
         raise PermissionDenied("Tài khoản đã bị khóa.")
@@ -72,9 +83,27 @@ class AlbumCollectionAPIView(APIView):
         )
         filters.is_valid(raise_exception=True)
         params = filters.validated_data
+        base_queryset = Album.objects.filter(
+            pipeline_id=pipeline.pk
+        )
+        summary = base_queryset.aggregate(
+            total=Count("id"),
+            enabled=Count("id", filter=Q(is_enabled=True)),
+            disabled=Count("id", filter=Q(is_enabled=False)),
+        )
+        queryset = base_queryset
+        search = params.get("search", "")
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search)
+                | Q(description__icontains=search)
+            )
+        if "enabled" in params:
+            queryset = queryset.filter(
+                is_enabled=params["enabled"]
+            )
         queryset = (
-            Album.objects
-            .filter(pipeline_id=pipeline.pk)
+            queryset
             .annotate(image_count=Count("images"))
             .order_by("-created_at", "-id")
         )
@@ -95,6 +124,7 @@ class AlbumCollectionAPIView(APIView):
                 album_to_dict(album)
                 for album in page.object_list
             ],
+            "summary": summary,
             "pagination": {
                 "page": page.number,
                 "page_size": params["page_size"],
