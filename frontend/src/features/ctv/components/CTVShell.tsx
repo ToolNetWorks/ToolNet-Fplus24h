@@ -23,7 +23,7 @@ import { getCsrfToken } from "@/features/auth/api/auth-client";
 import CTVAccountsTable from "./CTVAccountsTable";
 import CTVProxyTable from "./CTVProxyTable";
 import CTVGroupsTable from "./CTVGroupsTable";
-import AlbumLibrary from "@/features/albums/components/AlbumLibrary";
+import CTVAlbumsTable from "./CTVAlbumsTable";
 import "./ctv-shell.css";
 
 type Tab = "overview" | "accounts" | "proxies" | "groups" | "albums";
@@ -362,10 +362,7 @@ export default function CTVShell({
             <CTVGroupsTable pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "albums" && (
-            <AlbumLibrary
-              pipelineId={workspace.pipeline.id}
-              backHref={null}
-            />
+            <CTVAlbumsTable pipelineId={workspace.pipeline.id} />
           )}
         </main>
       </div>
