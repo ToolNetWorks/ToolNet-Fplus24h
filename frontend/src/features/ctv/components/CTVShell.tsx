@@ -22,7 +22,7 @@ import {
 import { getCsrfToken } from "@/features/auth/api/auth-client";
 import CTVAccountsTable from "./CTVAccountsTable";
 import CTVProxyTable from "./CTVProxyTable";
-import FacebookGroupsPanel from "@/features/facebook-groups/components/FacebookGroupsPanel";
+import CTVGroupsTable from "./CTVGroupsTable";
 import AlbumLibrary from "@/features/albums/components/AlbumLibrary";
 import "./ctv-shell.css";
 
@@ -359,10 +359,7 @@ export default function CTVShell({
             <CTVProxyTable pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "groups" && (
-            <FacebookGroupsPanel
-              pipelineId={workspace.pipeline.id}
-              backHref={null}
-            />
+            <CTVGroupsTable pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "albums" && (
             <AlbumLibrary

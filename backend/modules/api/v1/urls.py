@@ -1,3 +1,4 @@
+from .facebook_groups.bulk_views import FacebookGroupBulkStatusAPIView
 from .proxies.check_views import ProxyCheckAPIView
 from .proxies.views import (
     ProxyListCreateAPIView,
@@ -32,6 +33,12 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/facebook-groups/bulk-status/",
+        FacebookGroupBulkStatusAPIView.as_view(),
+        name="facebook-group-bulk-status",
+    ),
+
     path(
         "pipelines/<uuid:pipeline_id>/proxies/<uuid:proxy_id>/check/",
         ProxyCheckAPIView.as_view(),

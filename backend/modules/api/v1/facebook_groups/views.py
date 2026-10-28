@@ -3,7 +3,7 @@ from django.core.exceptions import (
 )
 from django.core.paginator import EmptyPage, Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import Http404
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
@@ -88,9 +88,35 @@ class FacebookGroupCollectionAPIView(FacebookGroupBaseAPIView):
         )
         serializer.is_valid(raise_exception=True)
         filters = serializer.validated_data
-        queryset = FacebookGroup.objects.filter(
+        base_queryset = FacebookGroup.objects.filter(
             pipeline_id=pipeline.pk,
-        ).order_by("-created_at", "-id")
+        )
+        summary = base_queryset.aggregate(
+            total=Count("id"),
+            enabled=Count(
+                "id",
+                filter=Q(is_enabled=True),
+            ),
+            disabled=Count(
+                "id",
+                filter=Q(is_enabled=False),
+            ),
+            verified=Count(
+                "id",
+                filter=Q(verification_status="verified"),
+            ),
+            unknown=Count(
+                "id",
+                filter=Q(verification_status="unknown"),
+            ),
+            unavailable=Count(
+                "id",
+                filter=Q(verification_status="unavailable"),
+            ),
+        )
+        queryset = base_queryset.order_by(
+            "-created_at", "-id"
+        )
         search = filters.get("search", "").strip()
         if search:
             queryset = queryset.filter(
@@ -100,6 +126,12 @@ class FacebookGroupCollectionAPIView(FacebookGroupBaseAPIView):
         if "enabled" in filters:
             queryset = queryset.filter(
                 is_enabled=filters["enabled"]
+            )
+        if "verification_status" in filters:
+            queryset = queryset.filter(
+                verification_status=filters[
+                    "verification_status"
+                ],
             )
         paginator = Paginator(
             queryset,
@@ -121,6 +153,7 @@ class FacebookGroupCollectionAPIView(FacebookGroupBaseAPIView):
                 serialize_group(group)
                 for group in page.object_list
             ],
+            "summary": summary,
             "pagination": {
                 "page": page.number,
                 "page_size": filters["page_size"],

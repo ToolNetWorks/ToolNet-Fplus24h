@@ -68,6 +68,14 @@ class FacebookGroupFilterSerializer(serializers.Serializer):
     enabled = serializers.BooleanField(
         required=False,
     )
+    verification_status = serializers.ChoiceField(
+        choices=[
+            "unknown",
+            "verified",
+            "unavailable",
+        ],
+        required=False,
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

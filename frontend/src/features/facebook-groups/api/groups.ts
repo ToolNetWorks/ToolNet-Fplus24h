@@ -23,6 +23,14 @@ export interface GroupListResult {
   success: boolean;
   data: FacebookGroup[];
   pagination: Pagination;
+  summary?: {
+    total: number;
+    enabled: number;
+    disabled: number;
+    verified: number;
+    unknown: number;
+    unavailable: number;
+  };
 }
 export interface GroupInput {
   name: string;
@@ -66,18 +74,26 @@ export async function listGroups(
     page: number;
     search: string;
     enabled: "all" | "true" | "false";
+    pageSize?: number;
+    verificationStatus?: "all" | "unknown" | "verified" | "unavailable";
   },
   signal?: AbortSignal,
 ): Promise<GroupListResult> {
   const query = new URLSearchParams({
     page: String(params.page),
-    page_size: "10",
+    page_size: String(params.pageSize ?? 10),
   });
   if (params.search.trim()) {
     query.set("search", params.search.trim());
   }
   if (params.enabled !== "all") {
     query.set("enabled", params.enabled);
+  }
+  if (
+    params.verificationStatus &&
+    params.verificationStatus !== "all"
+  ) {
+    query.set("verification_status", params.verificationStatus);
   }
   const response = await fetch(
     `${endpoint(pipelineId)}?${query.toString()}`,
@@ -135,4 +151,44 @@ export function updateGroup(
     "PATCH",
     changes,
   );
+}
+
+export async function bulkUpdateGroupStatus(
+  pipelineId: string,
+  groupIds: string[],
+  isEnabled: boolean,
+): Promise<{
+  selected_count: number;
+  updated_count: number;
+  is_enabled: boolean;
+}> {
+  if (groupIds.length < 1 || groupIds.length > 50) {
+    throw new Error("Chọn từ 1 đến 50 Group.");
+  }
+  const csrfToken = await getCsrfToken();
+  const response = await fetch(
+    `${endpoint(pipelineId)}bulk-status/`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
+      },
+      body: JSON.stringify({
+        group_ids: groupIds,
+        is_enabled: isEnabled,
+      }),
+    },
+  );
+  const data = await parseResponse(response);
+  if (!data.data || typeof data.data !== "object") {
+    throw new Error("Phản hồi cập nhật Group không hợp lệ.");
+  }
+  return data.data as {
+    selected_count: number;
+    updated_count: number;
+    is_enabled: boolean;
+  };
 }
