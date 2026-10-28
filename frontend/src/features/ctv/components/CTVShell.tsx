@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Users,
   UsersRound,
+  Network,
   Images,
   CalendarDays,
   FileText,
@@ -20,11 +21,12 @@ import {
 } from "lucide-react";
 import { getCsrfToken } from "@/features/auth/api/auth-client";
 import CTVAccountsTable from "./CTVAccountsTable";
+import CTVProxyTable from "./CTVProxyTable";
 import FacebookGroupsPanel from "@/features/facebook-groups/components/FacebookGroupsPanel";
 import AlbumLibrary from "@/features/albums/components/AlbumLibrary";
 import "./ctv-shell.css";
 
-type Tab = "overview" | "accounts" | "groups" | "albums";
+type Tab = "overview" | "accounts" | "proxies" | "groups" | "albums";
 
 interface WorkspacePayload {
   pipeline: {
@@ -71,6 +73,11 @@ const navigation: {
         tab: "accounts",
       },
       {
+        label: "Quản lý Proxy",
+        icon: Network,
+        tab: "proxies",
+      },
+      {
         label: "Quản lý Groups",
         icon: UsersRound,
         tab: "groups",
@@ -102,6 +109,7 @@ const navigation: {
 const titles: Record<Tab, string> = {
   overview: "Tổng quan Pipeline",
   accounts: "Danh sách tài khoản",
+  proxies: "Quản lý Proxy",
   groups: "Quản lý Facebook Groups",
   albums: "Thư viện Album ảnh",
 };
@@ -346,6 +354,9 @@ export default function CTVShell({
           )}
           {activeTab === "accounts" && (
             <CTVAccountsTable pipelineId={workspace.pipeline.id} />
+          )}
+          {activeTab === "proxies" && (
+            <CTVProxyTable pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "groups" && (
             <FacebookGroupsPanel
