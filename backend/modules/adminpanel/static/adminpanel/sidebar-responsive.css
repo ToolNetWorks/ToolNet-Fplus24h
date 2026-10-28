@@ -1,0 +1,184 @@
+/* ToolNet Publisher - Responsive Sidebar */
+
+.sidebar,
+.main-area {
+    transition: width .24s ease, margin-left .24s ease,
+                transform .24s ease;
+}
+
+.sidebar {
+    z-index: 1000;
+    overflow-x: hidden;
+}
+
+.brand-name,
+.nav-label,
+.profile-details,
+.logout-label {
+    white-space: nowrap;
+}
+
+.menu-toggle {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 9px;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.menu-toggle::before {
+    content: "☰";
+    font-size: 22px;
+    line-height: 1;
+}
+
+.menu-toggle:hover {
+    background: #eaf1ff;
+    color: var(--primary);
+}
+
+.topbar {
+    justify-content: flex-start;
+    gap: 16px;
+}
+
+.topbar-user {
+    margin-left: auto;
+}
+
+.logout-icon {
+    display: none;
+}
+
+/* Desktop - Thu gọn còn icon */
+@media (min-width: 961px) {
+    body.sidebar-collapsed .sidebar {
+        width: 76px;
+        padding-left: 9px;
+        padding-right: 9px;
+    }
+
+    body.sidebar-collapsed .main-area {
+        margin-left: 76px;
+    }
+
+    body.sidebar-collapsed .brand {
+        padding: 8px 0 24px;
+        justify-content: center;
+    }
+
+    body.sidebar-collapsed .brand-name,
+    body.sidebar-collapsed .nav-caption,
+    body.sidebar-collapsed .nav-label,
+    body.sidebar-collapsed .profile-details,
+    body.sidebar-collapsed .logout-label {
+        display: none;
+    }
+
+    body.sidebar-collapsed .nav-link {
+        justify-content: center;
+        padding: 13px 0;
+        gap: 0;
+    }
+
+    body.sidebar-collapsed .nav-icon {
+        text-align: center;
+        width: 24px;
+    }
+
+    body.sidebar-collapsed .admin-profile {
+        justify-content: center;
+    }
+
+    body.sidebar-collapsed .logout-icon {
+        display: inline;
+        font-size: 20px;
+    }
+}
+
+/* Mobile / Tablet - Menu trượt */
+@media (max-width: 960px) {
+    .sidebar {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 270px;
+        height: 100vh;
+        height: 100dvh;
+        padding: 22px 14px;
+        transform: translateX(-100%);
+        background: white;
+        box-shadow: 8px 0 30px rgba(0,0,0,.08);
+    }
+
+    body.sidebar-open .sidebar {
+        transform: translateX(0);
+    }
+
+    .main-area,
+    body.sidebar-collapsed .main-area {
+        margin-left: 0;
+    }
+
+    .sidebar-bottom {
+        display: block;
+    }
+
+    .navigation {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .brand {
+        padding: 8px 10px 28px;
+    }
+
+    .nav-caption {
+        display: block;
+    }
+
+    .nav-label,
+    .brand-name,
+    .profile-details,
+    .logout-label {
+        display: inline;
+    }
+
+    .sidebar-backdrop:not([hidden]) {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 999;
+        border: none;
+        background: rgba(15,23,42,.48);
+        cursor: pointer;
+    }
+
+    body.sidebar-open {
+        overflow: hidden;
+    }
+
+    .topbar {
+        padding: 0 16px;
+        gap: 12px;
+    }
+}
+
+.sidebar-backdrop[hidden] {
+    display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidebar,
+    .main-area {
+        transition: none;
+    }
+}

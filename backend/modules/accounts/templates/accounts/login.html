@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1">
+    <title>CTV Login | ToolNet Publisher</title>
+</head>
+<body>
+    <h2>ToolNet Publisher</h2>
+    <h3>Đăng nhập CTV</h3>
+
+    {% if form.non_field_errors %}
+        <div style="color:red">
+            {{ form.non_field_errors }}
+        </div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+
+        <p>
+            <label>Tài khoản</label>
+            {{ form.username }}
+        </p>
+
+        <p>
+            <label>Mật khẩu</label>
+            {{ form.password }}
+        </p>
+
+        <button type="submit">
+            Đăng nhập
+        </button>
+    </form>
+</body>
+</html>

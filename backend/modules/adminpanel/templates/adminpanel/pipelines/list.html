@@ -1,0 +1,143 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Quản lý Pipeline | ToolNet Publisher</title>
+
+    <link rel="stylesheet" href="{% static 'adminpanel/dashboard.css' %}">
+    <link rel="stylesheet" href="{% static 'adminpanel/sidebar-responsive.css' %}">
+    <script src="{% static 'adminpanel/sidebar.js' %}" defer></script>
+    <link rel="stylesheet" href="{% static 'adminpanel/pipelines.css' %}">
+</head>
+<body>
+<div class="app-layout">
+
+    {% include "adminpanel/partials/sidebar.html" %}
+
+    <div class="main-area">
+        <header class="topbar">
+            <button type="button"
+                    class="menu-toggle"
+                    id="menuToggle"
+                    aria-controls="adminSidebar"
+                    aria-expanded="true"
+                    aria-label="Thu gọn menu"></button>
+
+            <div>
+                <strong>ToolNet Publisher</strong>
+                <small>Quản lý hệ thống</small>
+            </div>
+            <div class="topbar-user">
+                Admin: {{ request.user.username }}
+            </div>
+        </header>
+
+        <main class="content">
+            <div class="page-heading">
+                <div>
+                    <h1>Quản lý Pipeline</h1>
+                    <p>Quản lý Pipeline và cộng tác viên trong hệ thống.</p>
+                </div>
+            </div>
+
+            <section class="table-card pipeline-section">
+                <div class="section-header">
+                    <div>
+                        <h2>Danh sách Pipeline</h2>
+                        <p>{{ total_results }} kết quả</p>
+                    </div>
+                    <span class="outline-btn" aria-disabled="true">
+                        Tạo Pipeline (sắp có)
+                    </span>
+                </div>
+
+                <form class="filter-bar" method="get">
+                    <input
+                        type="search"
+                        name="q"
+                        value="{{ search }}"
+                        placeholder="Tìm Pipeline hoặc Username CTV..."
+                        maxlength="100"
+                        aria-label="Tìm kiếm Pipeline"
+                    >
+
+                    <select name="status" aria-label="Trạng thái">
+                        <option value="">Tất cả trạng thái</option>
+                        <option value="active" {% if status == 'active' %}selected{% endif %}>
+                            Hoạt động
+                        </option>
+                        <option value="disabled" {% if status == 'disabled' %}selected{% endif %}>
+                            Tạm khóa
+                        </option>
+                    </select>
+
+                    <button type="submit" class="filter-btn">
+                        Tìm kiếm
+                    </button>
+                    <a class="reset-link" href="{% url 'adminpanel:pipelines' %}">
+                        Đặt lại
+                    </a>
+                </form>
+
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Pipeline</th>
+                                <th>Tài khoản CTV</th>
+                                <th>Trạng thái</th>
+                                <th>Ngày tạo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pipeline in pipelines %}
+                            <tr>
+                                <td><strong>{{ pipeline.name }}</strong></td>
+                                <td>{{ pipeline.ctv.username }}</td>
+                                <td>
+                                    {% if pipeline.status == 'active' %}
+                                    <span class="status active-status">Hoạt động</span>
+                                    {% else %}
+                                    <span class="status disabled-status">Tạm khóa</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ pipeline.created_at|date:"d/m/Y H:i" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="empty-state">
+                                    Không tìm thấy Pipeline phù hợp.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                {% if page_obj.has_other_pages %}
+                <div class="pagination">
+                    {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}&q={{ search|urlencode }}&status={{ status|urlencode }}">
+                        Trang trước
+                    </a>
+                    {% endif %}
+
+                    <span>
+                        Trang {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+                    </span>
+
+                    {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}&q={{ search|urlencode }}&status={{ status|urlencode }}">
+                        Trang sau
+                    </a>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </section>
+        </main>
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,127 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard | ToolNet Publisher</title>
+    <link rel="stylesheet" href="{% static 'adminpanel/dashboard.css' %}">
+    <link rel="stylesheet" href="{% static 'adminpanel/sidebar-responsive.css' %}">
+    <script src="{% static 'adminpanel/sidebar.js' %}" defer></script>
+</head>
+<body>
+<div class="app-layout">
+
+    {% include "adminpanel/partials/sidebar.html" %}
+
+    <div class="main-area">
+        <header class="topbar">
+            <button type="button"
+                    class="menu-toggle"
+                    id="menuToggle"
+                    aria-controls="adminSidebar"
+                    aria-expanded="true"
+                    aria-label="Thu gọn menu"></button>
+
+            <div>
+                <strong>ToolNet Publisher</strong>
+                <small>Hệ thống quản trị</small>
+            </div>
+            <div class="topbar-user">
+                Admin: {{ request.user.username }}
+            </div>
+        </header>
+
+        <main class="content">
+            <div class="page-heading">
+                <div>
+                    <h1>Dashboard</h1>
+                    <p>Tổng quan hệ thống Pipeline và cộng tác viên.</p>
+                </div>
+
+                <a class="primary-btn" href="{% url 'admin:pipelines_pipeline_add' %}">
+                    + Tạo Pipeline
+                </a>
+            </div>
+
+            <section class="stats-grid" aria-label="Thống kê">
+                <div class="stat-card">
+                    <span>Tổng Pipeline</span>
+                    <strong>{{ total_pipelines }}</strong>
+                    <small>Tất cả Pipeline</small>
+                </div>
+                <div class="stat-card">
+                    <span>Tổng CTV</span>
+                    <strong>{{ total_ctv }}</strong>
+                    <small>CTV được gắn Pipeline</small>
+                </div>
+                <div class="stat-card">
+                    <span>Đang hoạt động</span>
+                    <strong class="success">{{ active_pipelines }}</strong>
+                    <small>Pipeline đang bật</small>
+                </div>
+                <div class="stat-card">
+                    <span>Đã tạm khóa</span>
+                    <strong class="danger">{{ disabled_pipelines }}</strong>
+                    <small>Pipeline bị vô hiệu hóa</small>
+                </div>
+            </section>
+
+            <section class="table-card">
+                <div class="section-header">
+                    <div>
+                        <h2>Danh sách Pipeline</h2>
+                        <p>10 Pipeline được tạo gần nhất</p>
+                    </div>
+
+                    <a class="outline-btn" href="{% url 'admin:pipelines_pipeline_changelist' %}">
+                        Xem tất cả
+                    </a>
+                </div>
+
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tên Pipeline</th>
+                                <th>Tài khoản CTV</th>
+                                <th>Trạng thái</th>
+                                <th>Ngày tạo</th>
+                                <th>Quản lý</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for pipeline in pipelines %}
+                            <tr>
+                                <td><strong>{{ pipeline.name }}</strong></td>
+                                <td>{{ pipeline.ctv.username }}</td>
+                                <td>
+                                    {% if pipeline.status == 'active' %}
+                                        <span class="status active-status">Hoạt động</span>
+                                    {% else %}
+                                        <span class="status disabled-status">Tạm khóa</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ pipeline.created_at|date:"d/m/Y H:i" }}</td>
+                                <td>
+                                    <a href="{% url 'admin:pipelines_pipeline_change' pipeline.pk %}">
+                                        Chi tiết
+                                    </a>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="5" class="empty-state">
+                                    Chưa có Pipeline nào. Hãy tạo Pipeline đầu tiên.
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+</div>
+</body>
+</html>

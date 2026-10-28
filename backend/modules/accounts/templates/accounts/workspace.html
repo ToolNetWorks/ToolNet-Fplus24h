@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1">
+    <title>Workspace | ToolNet Publisher</title>
+</head>
+<body>
+    <h2>ToolNet Publisher</h2>
+
+    <h3>Workspace: {{ pipeline.name }}</h3>
+
+    <p>CTV: {{ request.user.username }}</p>
+    <p>Trạng thái: {{ pipeline.get_status_display }}</p>
+
+    <form action="{% url 'ctv_logout' %}" method="post">
+        {% csrf_token %}
+        <button type="submit">
+            Đăng xuất
+        </button>
+    </form>
+</body>
+</html>

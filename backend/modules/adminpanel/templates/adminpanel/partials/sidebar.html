@@ -1,0 +1,70 @@
+<aside class="sidebar" id="adminSidebar" aria-label="Menu quản trị">
+
+    <div class="brand">
+        <span class="brand-icon">T</span>
+        <span class="brand-name">
+            TOOLNET <strong>PUBLISHER</strong>
+        </span>
+    </div>
+
+    <div class="nav-caption">QUẢN TRỊ HỆ THỐNG</div>
+
+    <nav class="navigation" aria-label="Điều hướng quản trị">
+
+        <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
+           href="{% url 'adminpanel:dashboard' %}"
+           title="Dashboard">
+            <span class="nav-icon">▦</span>
+            <span class="nav-label">Dashboard</span>
+        </a>
+
+        <a class="nav-link {% if request.resolver_match.url_name == 'pipelines' %}active{% endif %}"
+           href="{% url 'adminpanel:pipelines' %}"
+           title="Quản lý Pipeline">
+            <span class="nav-icon">▤</span>
+            <span class="nav-label">Quản lý Pipeline</span>
+        </a>
+
+        <span class="nav-link" aria-disabled="true"
+              title="Quản lý CTV - đang triển khai">
+            <span class="nav-icon">♙</span>
+            <span class="nav-label">Quản lý CTV (sắp có)</span>
+        </span>
+
+        <span class="nav-link" aria-disabled="true"
+              title="Cài đặt Admin - đang triển khai">
+            <span class="nav-icon">⚙</span>
+            <span class="nav-label">Cài đặt Admin (sắp có)</span>
+        </span>
+
+    </nav>
+
+    <div class="sidebar-bottom">
+        <div class="admin-profile">
+            <span class="avatar">
+                {{ request.user.username|first|upper }}
+            </span>
+            <div class="profile-details">
+                <strong>{{ request.user.username }}</strong>
+                <small>Super Administrator</small>
+            </div>
+        </div>
+
+        <form method="post"
+              action="{% url 'adminpanel:logout' %}">
+            {% csrf_token %}
+            <button class="logout-btn" type="submit"
+                    title="Đăng xuất" aria-label="Đăng xuất">
+                <span class="logout-icon">⎋</span>
+                <span class="logout-label">Đăng xuất</span>
+            </button>
+        </form>
+    </div>
+
+</aside>
+
+<button type="button"
+        class="sidebar-backdrop"
+        id="sidebarBackdrop"
+        aria-label="Đóng menu"
+        hidden></button>

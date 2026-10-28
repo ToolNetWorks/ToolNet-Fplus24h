@@ -1,0 +1,79 @@
+.pipeline-section {
+    margin-top: 28px;
+}
+
+.filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 22px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.filter-bar input,
+.filter-bar select {
+    height: 42px;
+    padding: 0 13px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: white;
+    color: var(--text);
+    font: inherit;
+}
+
+.filter-bar input {
+    flex: 1;
+    min-width: 190px;
+}
+
+.filter-btn {
+    height: 42px;
+    background: var(--primary);
+    border: 0;
+    border-radius: 8px;
+    color: white;
+    padding: 0 18px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.reset-link {
+    padding: 10px;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    padding: 20px;
+    border-top: 1px solid var(--border);
+}
+
+.pagination a {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+}
+
+.nav-link[aria-disabled="true"],
+.outline-btn[aria-disabled="true"] {
+    opacity: .55;
+    cursor: default;
+}
+
+@media (max-width: 700px) {
+    .filter-bar {
+        padding: 14px;
+    }
+
+    .filter-bar input {
+        flex-basis: 100%;
+    }
+
+    .filter-bar select {
+        flex: 1;
+        min-width: 0;
+    }
+}
