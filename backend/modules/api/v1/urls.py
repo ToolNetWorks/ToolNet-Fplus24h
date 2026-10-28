@@ -1,3 +1,4 @@
+from .publishing.media_policy_views import PipelineMediaPolicyAPIView
 from .albums.bulk_views import AlbumBulkStatusAPIView
 from .facebook_groups.bulk_views import FacebookGroupBulkStatusAPIView
 from .proxies.check_views import ProxyCheckAPIView
@@ -34,6 +35,12 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/media-policy/",
+        PipelineMediaPolicyAPIView.as_view(),
+        name="pipeline-media-policy",
+    ),
+
     path(
         "pipelines/<uuid:pipeline_id>/albums/bulk-status/",
         AlbumBulkStatusAPIView.as_view(),
