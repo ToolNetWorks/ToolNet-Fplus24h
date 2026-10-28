@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'modules.pipelines.apps.PipelinesConfig',
     'modules.accounts.apps.AccountsConfig',
     "modules.facebook_accounts.apps.FacebookAccountsConfig",
+    "modules.proxies.apps.ProxiesConfig",
     "modules.facebook_groups.apps.FacebookGroupsConfig",
     "modules.albums.apps.AlbumsConfig",
     "modules.publishing.apps.PublishingConfig",
