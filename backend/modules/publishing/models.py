@@ -313,3 +313,162 @@ class MediaAllocationItem(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         return super().save(*args, **kwargs)
+
+
+class PublishingJob(models.Model):
+    """One intended group post. External network publication is NOT implemented here."""
+
+    class State(models.TextChoices):
+        QUEUED = "queued", "Chờ xử lý"
+        CLAIMED = "claimed", "Worker đã nhận"
+        READY = "ready", "Đã chuẩn bị ảnh"
+        DISPATCHING = "dispatching", "Đã cho phép thử đăng"
+        UNCERTAIN = "uncertain", "Chờ đối soát"
+        PUBLISHED = "published", "Đã xác minh đăng thành công"
+        FAILED = "failed", "Lỗi trước khi đăng"
+        CANCELLED = "cancelled", "Đã hủy"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    pipeline = models.ForeignKey(
+        Pipeline, on_delete=models.PROTECT, related_name="publishing_jobs",
+    )
+    facebook_account = models.ForeignKey(
+        "facebook_accounts.FacebookAccount", on_delete=models.PROTECT,
+        related_name="publishing_jobs",
+    )
+    facebook_group = models.ForeignKey(
+        "facebook_groups.FacebookGroup", on_delete=models.PROTECT,
+        related_name="publishing_jobs",
+    )
+    request_key = models.CharField(max_length=128)
+    caption = models.TextField(blank=True, default="", max_length=5000)
+    state = models.CharField(
+        max_length=20, choices=State.choices, default=State.QUEUED,
+    )
+    scheduled_at = models.DateTimeField()
+    next_run_at = models.DateTimeField()
+    max_attempts = models.PositiveSmallIntegerField(
+        default=3, validators=[MinValueValidator(1), MaxValueValidator(5)],
+    )
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    worker_id = models.CharField(max_length=100, blank=True, default="")
+    # Secret worker token. Never serialize to CTV or Admin API responses.
+    claim_token = models.CharField(max_length=100, blank=True, default="")
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+    media_allocation = models.ForeignKey(
+        "publishing.MediaAllocation", on_delete=models.PROTECT,
+        null=True, blank=True, related_name="publishing_jobs",
+    )
+    external_post_id = models.CharField(max_length=200, blank=True, default="")
+    error_code = models.CharField(max_length=80, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    finalized_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "publisher_publishing_jobs"
+        ordering = ["scheduled_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pipeline", "request_key"],
+                name="unique_publishing_job_request",
+            ),
+            models.UniqueConstraint(
+                fields=["pipeline", "external_post_id"],
+                condition=~Q(external_post_id=""),
+                name="unique_pubjob_external_post",
+            ),
+            models.CheckConstraint(
+                condition=Q(max_attempts__gte=1) & Q(max_attempts__lte=5),
+                name="pubjob_max_attempts_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(attempt_count__gte=0) & Q(attempt_count__lte=5),
+                name="pubjob_attempt_count_range",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["pipeline", "state", "next_run_at"],
+                name="pubjob_queue_idx",
+            ),
+            models.Index(
+                fields=["pipeline", "state", "lease_expires_at"],
+                name="pubjob_lease_idx",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.pipeline_id and self.facebook_account_id:
+            from modules.facebook_accounts.models import FacebookAccount
+            if not FacebookAccount.objects.filter(
+                pk=self.facebook_account_id, pipeline_id=self.pipeline_id,
+            ).exists():
+                raise ValidationError({"facebook_account": "Tài khoản sai Pipeline."})
+        if self.pipeline_id and self.facebook_group_id:
+            from modules.facebook_groups.models import FacebookGroup
+            if not FacebookGroup.objects.filter(
+                pk=self.facebook_group_id, pipeline_id=self.pipeline_id,
+            ).exists():
+                raise ValidationError({"facebook_group": "Group sai Pipeline."})
+        if self.pipeline_id and self.media_allocation_id:
+            if not MediaAllocation.objects.filter(
+                pk=self.media_allocation_id, pipeline_id=self.pipeline_id,
+            ).exists():
+                raise ValidationError({"media_allocation": "Cấp phát ảnh sai Pipeline."})
+        if self.attempt_count > self.max_attempts:
+            raise ValidationError({"attempt_count": "Quá số lần thử."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PublishingAttempt(models.Model):
+    """Immutable attempt number and media allocation history per Job."""
+
+    class State(models.TextChoices):
+        CLAIMED = "claimed", "Đã nhận"
+        READY = "ready", "Có ảnh"
+        DISPATCHING = "dispatching", "Đã bắt đầu thử đăng"
+        UNCERTAIN = "uncertain", "Cần đối soát"
+        PUBLISHED = "published", "Đã xác minh"
+        RELEASED = "released", "Đã giải phóng trước khi đăng"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(
+        PublishingJob, on_delete=models.PROTECT, related_name="attempts",
+    )
+    number = models.PositiveSmallIntegerField(validators=[MinValueValidator(1)])
+    media_allocation = models.OneToOneField(
+        MediaAllocation, null=True, blank=True,
+        on_delete=models.PROTECT, related_name="publishing_attempt",
+    )
+    state = models.CharField(
+        max_length=20, choices=State.choices, default=State.CLAIMED,
+    )
+    started_at = models.DateTimeField(auto_now_add=True)
+    finalized_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "publisher_publishing_attempts"
+        ordering = ["number", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["job", "number"], name="unique_pubjob_attempt_number",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.job_id and self.media_allocation_id:
+            if not MediaAllocation.objects.filter(
+                pk=self.media_allocation_id,
+                pipeline_id=self.job.pipeline_id,
+            ).exists():
+                raise ValidationError({"media_allocation": "Cấp phát ảnh sai Pipeline."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
