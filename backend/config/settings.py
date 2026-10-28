@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "modules.facebook_accounts.apps.FacebookAccountsConfig",
     "modules.facebook_groups.apps.FacebookGroupsConfig",
     "modules.albums.apps.AlbumsConfig",
+    "modules.publishing.apps.PublishingConfig",
 ]
 
 MIDDLEWARE = [
