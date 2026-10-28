@@ -1,4 +1,5 @@
 "use client";
+import AlbumLibrary from "@/features/albums/components/AlbumLibrary";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -211,6 +212,10 @@ export default function CTVWorkspace() {
           backHref={null}
         />
         <FacebookGroupsPanel
+          pipelineId={workspace.pipeline.id}
+          backHref={null}
+        />
+        <AlbumLibrary
           pipelineId={workspace.pipeline.id}
           backHref={null}
         />

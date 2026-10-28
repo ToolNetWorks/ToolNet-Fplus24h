@@ -1,3 +1,5 @@
+from .albums.image_content_views import AlbumImageContentAPIView
+from .albums.image_list_views import AlbumImageCollectionAPIView
 from .albums.upload_views import AlbumImageUploadAPIView
 from .albums.detail_views import AlbumDetailAPIView
 from .albums.views import AlbumCollectionAPIView
@@ -22,7 +24,8 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
-    path("pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/images/", AlbumImageUploadAPIView.as_view(), name="album-image-upload"),
+    path("pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/images/<uuid:image_id>/content/", AlbumImageContentAPIView.as_view(), name="album-image-content"),
+    path("pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/images/", AlbumImageCollectionAPIView.as_view(), name="album-image-upload"),
     path("pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/", AlbumDetailAPIView.as_view(), name="album-detail"),
     path("pipelines/<uuid:pipeline_id>/albums/", AlbumCollectionAPIView.as_view(), name="album-collection"),
     path("pipelines/<uuid:pipeline_id>/facebook-groups/<uuid:group_id>/", FacebookGroupDetailAPIView.as_view(), name="facebook-group-detail"),
