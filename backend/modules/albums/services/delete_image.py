@@ -2,6 +2,7 @@ import logging
 import uuid
 from django.db import transaction
 from modules.albums.models import Album, AlbumImage
+from modules.publishing.models import MediaAllocation, MediaAllocationItem
 from .r2_storage import R2StorageError, get_r2_client
 logger = logging.getLogger(__name__)
 class ImageDeletionConflict(Exception):
@@ -52,6 +53,16 @@ def delete_album_image(*, pipeline_id, album_id, image_id):
                 album_id=album.pk,
             )
         )
+        if MediaAllocationItem.objects.filter(
+            image_id=image.pk,
+            allocation__state__in=[
+                MediaAllocation.State.RESERVED,
+                MediaAllocation.State.UNCERTAIN,
+            ],
+        ).exists():
+            raise ImageDeletionConflict(
+                "Ảnh đang được cấp phát hoặc chờ đối soát bài đăng."
+            )
         key = validate_storage_key(
             image,
             pipeline_id,

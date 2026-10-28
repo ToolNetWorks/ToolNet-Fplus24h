@@ -161,3 +161,155 @@ class PipelineAlbumSource(models.Model):
             f"{self.pipeline_id} -> "
             f"{self.album_id} ({self.position})"
         )
+
+
+class MediaAllocation(models.Model):
+    """Idempotent image lease for one future publishing job.
+
+    Publishing must confirm an allocation *only after* the external post
+    is verified. An uncertain result must never be silently released.
+    No Facebook operations are implemented here.
+    """
+
+    class State(models.TextChoices):
+        RESERVED = "reserved", "Đang giữ chỗ"
+        CONSUMED = "consumed", "Đã sử dụng"
+        RELEASED = "released", "Đã giải phóng"
+        UNCERTAIN = "uncertain", "Chưa rõ kết quả đăng"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    pipeline = models.ForeignKey(
+        Pipeline, on_delete=models.PROTECT, related_name="media_allocations",
+    )
+    # Caller supplies a stable, non-secret, per-job idempotency key.
+    request_key = models.CharField(max_length=128)
+    state = models.CharField(
+        max_length=12, choices=State.choices, default=State.RESERVED,
+    )
+    images_requested = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+    )
+    # The cycle is advanced *only* by Media Selection Engine (Step 9.6.2).
+    cycle_number = models.PositiveIntegerField(
+        default=1, validators=[MinValueValidator(1)],
+    )
+    # Policy is snapshotted for audit; credentials / R2 secrets never belong here.
+    policy_snapshot = models.JSONField(default=dict)
+    policy_version = models.CharField(max_length=50, blank=True, default="")
+    lease_expires_at = models.DateTimeField()
+    last_heartbeat_at = models.DateTimeField(null=True, blank=True)
+    finalized_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "publisher_media_allocations"
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pipeline", "request_key"],
+                name="unique_media_allocation_request",
+            ),
+            models.CheckConstraint(
+                condition=Q(images_requested__gte=1) & Q(images_requested__lte=10),
+                name="media_allocation_images_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(cycle_number__gte=1),
+                name="media_allocation_cycle_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(state__in=["reserved", "consumed", "released", "uncertain"]),
+                name="media_allocation_state_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["pipeline", "state", "lease_expires_at"],
+                name="media_alloc_lease_idx",
+            ),
+            models.Index(
+                fields=["pipeline", "cycle_number", "state"],
+                name="media_alloc_cycle_idx",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.request_key = (self.request_key or "").strip()
+        if not self.request_key:
+            raise ValidationError({"request_key": "Thiếu khóa tác vụ cấp phát."})
+        if not isinstance(self.policy_snapshot, dict):
+            raise ValidationError({"policy_snapshot": "Chính sách chụp lại không hợp lệ."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class MediaAllocationItem(models.Model):
+    """Immutable identity snapshot for each selected image.
+
+    AlbumImage can later be deleted from R2 after allocation is finalized;
+    image_uuid and album_uuid keep usage history available. Future reserve
+    logic must hold the Pipeline/Album locks when choosing these rows.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    allocation = models.ForeignKey(
+        MediaAllocation, on_delete=models.PROTECT, related_name="items",
+    )
+    image = models.ForeignKey(
+        "albums.AlbumImage", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="media_allocation_items",
+    )
+    image_uuid = models.UUIDField()
+    album_uuid = models.UUIDField()
+    position = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "publisher_media_allocation_items"
+        ordering = ["position", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["allocation", "image_uuid"],
+                name="unique_media_alloc_image",
+            ),
+            models.UniqueConstraint(
+                fields=["allocation", "position"],
+                name="unique_media_alloc_position",
+            ),
+            models.CheckConstraint(
+                condition=Q(position__gte=1) & Q(position__lte=10),
+                name="media_alloc_item_position_range",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["image_uuid"], name="media_alloc_image_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if not self.allocation_id or not self.image_id:
+            return
+        # Validate tenant isolation and immutable snapshot when image exists.
+        identity = (
+            self.image.__class__.objects
+            .filter(pk=self.image_id)
+            .values_list("album_id", "album__pipeline_id")
+            .first()
+        )
+        if identity is None:
+            raise ValidationError({"image": "Ảnh không tồn tại."})
+        album_id, pipeline_id = identity
+        if pipeline_id != self.allocation.pipeline_id:
+            raise ValidationError({"image": "Ảnh thuộc Pipeline khác."})
+        if self.image_uuid != self.image_id or self.album_uuid != album_id:
+            raise ValidationError("Định danh ảnh/Album đã chụp lại không khớp.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
