@@ -1,3 +1,4 @@
+from .proxies.check_views import ProxyCheckAPIView
 from .proxies.views import (
     ProxyListCreateAPIView,
     ProxyBulkAPIView,
@@ -31,6 +32,11 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/proxies/<uuid:proxy_id>/check/",
+        ProxyCheckAPIView.as_view(),
+        name="proxy-check",
+    ),
     path(
         "pipelines/<uuid:pipeline_id>/proxies/",
         ProxyListCreateAPIView.as_view(),

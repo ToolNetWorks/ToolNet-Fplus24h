@@ -67,6 +67,10 @@ class ProxyEndpoint(models.Model):
         null=True,
         blank=True,
     )
+    latency_ms = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+    )
     notes = models.CharField(
         max_length=500,
         blank=True,

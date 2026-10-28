@@ -214,6 +214,7 @@ def proxy_to_dict(proxy):
         "is_enabled": proxy.is_enabled,
         "health_status": proxy.health_status,
         "exit_ip": proxy.exit_ip,
+        "latency_ms": proxy.latency_ms,
         "last_checked_at": (
             proxy.last_checked_at.isoformat()
             if proxy.last_checked_at else None
@@ -295,6 +296,7 @@ def persist_proxy(*, pipeline, data, instance=None):
             ProxyEndpoint.HealthStatus.UNTESTED
         )
         proxy.exit_ip = None
+        proxy.latency_ms = None
         proxy.last_checked_at = None
     proxy.full_clean()
     proxy.save()
