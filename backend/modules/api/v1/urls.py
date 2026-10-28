@@ -1,3 +1,8 @@
+from .publishing.job_views import (
+    PublishingJobListCreateAPIView,
+    PublishingJobDetailAPIView,
+    PublishingJobCancelAPIView,
+)
 from .publishing.media_policy_views import PipelineMediaPolicyAPIView
 from .albums.bulk_views import AlbumBulkStatusAPIView
 from .facebook_groups.bulk_views import FacebookGroupBulkStatusAPIView
@@ -35,6 +40,22 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/publishing-jobs/",
+        PublishingJobListCreateAPIView.as_view(),
+        name="publishing-job-list-create",
+    ),
+    path(
+        "pipelines/<uuid:pipeline_id>/publishing-jobs/<uuid:job_id>/cancel/",
+        PublishingJobCancelAPIView.as_view(),
+        name="publishing-job-cancel",
+    ),
+    path(
+        "pipelines/<uuid:pipeline_id>/publishing-jobs/<uuid:job_id>/",
+        PublishingJobDetailAPIView.as_view(),
+        name="publishing-job-detail",
+    ),
+
     path(
         "pipelines/<uuid:pipeline_id>/media-policy/",
         PipelineMediaPolicyAPIView.as_view(),

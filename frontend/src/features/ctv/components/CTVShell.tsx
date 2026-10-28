@@ -26,9 +26,10 @@ import CTVProxyTable from "./CTVProxyTable";
 import CTVGroupsTable from "./CTVGroupsTable";
 import CTVAlbumsTable from "./CTVAlbumsTable";
 import CTVMediaSources from "./CTVMediaSources";
+import CTVPublishingJobs from "./CTVPublishingJobs";
 import "./ctv-shell.css";
 
-type Tab = "overview" | "accounts" | "proxies" | "groups" | "albums" | "media";
+type Tab = "overview" | "accounts" | "proxies" | "groups" | "albums" | "media" | "jobs";
 
 interface WorkspacePayload {
   pipeline: {
@@ -97,7 +98,7 @@ const navigation: {
       { label: "Cấu hình Album nguồn", icon: SlidersHorizontal, tab: "media" },
       { label: "Đăng bài viết nhóm", icon: FileText },
       { label: "AI viết Caption", icon: Sparkles },
-      { label: "Lịch đăng bài", icon: CalendarDays },
+      { label: "Lịch đăng bài", icon: CalendarDays, tab: "jobs" },
       { label: "Lịch sử đăng bài", icon: Layers3 },
     ],
   },
@@ -116,6 +117,7 @@ const titles: Record<Tab, string> = {
   groups: "Quản lý Facebook Groups",
   albums: "Thư viện Album ảnh",
   media: "Cấu hình Album nguồn",
+  jobs: "Lịch đăng bài & Hàng đợi",
 };
 
 const STORAGE_KEY = "toolnet-ctv-sidebar-collapsed";
@@ -377,6 +379,9 @@ export default function CTVShell({
           )}
           {activeTab === "albums" && (
             <CTVAlbumsTable pipelineId={workspace.pipeline.id} />
+          )}
+          {activeTab === "jobs" && (
+            <CTVPublishingJobs pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "media" && (
             <CTVMediaSources
