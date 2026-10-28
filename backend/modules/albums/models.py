@@ -56,6 +56,7 @@ class AlbumImage(models.Model):
         PENDING = "pending", "Chờ upload"
         READY = "ready", "Sẵn sàng"
         FAILED = "failed", "Upload thất bại"
+        DELETING = "deleting", "Đang xóa"
     id = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,

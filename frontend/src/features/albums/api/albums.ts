@@ -195,3 +195,23 @@ export async function uploadAlbumImages(
   }
   return result.data;
 }
+
+export async function deleteAlbumImage(
+  pipelineId: string,
+  albumId: string,
+  imageId: string,
+): Promise<void> {
+  const csrfToken = await getCsrfToken();
+  const url =
+    `${imagesUrl(pipelineId, albumId)}` +
+    `${encodeURIComponent(imageId)}/`;
+  const response = await fetch(url, {
+    method: "DELETE",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: {
+      "X-CSRFToken": csrfToken,
+    },
+  });
+  await parse<{ success: true }>(response);
+}

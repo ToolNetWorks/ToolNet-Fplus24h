@@ -15,12 +15,14 @@ import {
   ImageIcon,
   LoaderCircle,
   Pencil,
+  Trash2,
   RefreshCw,
   Upload,
   X,
 } from "lucide-react";
 import {
   createAlbum,
+  deleteAlbumImage,
   listAlbums,
   listAlbumImages,
   updateAlbum,
@@ -71,6 +73,9 @@ export default function AlbumLibrary({
   const [editDescription, setEditDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [deletingImage, setDeletingImage] =
+    useState<AlbumImage | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const activeAlbum = albumResult?.data.find(
@@ -242,6 +247,53 @@ export default function AlbumLibrary({
       setMutationError(displayError(cause));
     } finally {
       setUploading(false);
+    }
+  }
+  function requestDeleteImage(image: AlbumImage) {
+    if (busy || uploading || deletingBusy) return;
+    setMutationError("");
+    setSuccess("");
+    setDeletingImage(image);
+  }
+  async function handleDeleteImage() {
+    const image = deletingImage;
+    if (!image || deletingBusy || busy || uploading) {
+      return;
+    }
+    setDeletingBusy(true);
+    setMutationError("");
+    setSuccess("");
+    try {
+      await deleteAlbumImage(
+        pipelineId,
+        image.album_id,
+        image.id,
+      );
+      setDeletingImage(null);
+      setSuccess("Đã xóa ảnh khỏi Album và R2.");
+      if (selectedId === image.album_id) {
+        const shouldGoBack =
+          imagePage > 1 &&
+          imageResult?.data.length === 1;
+        if (shouldGoBack) {
+          setImagePage((page) => page - 1);
+        } else {
+          refreshImages();
+        }
+      }
+      refreshAlbums();
+    } catch (cause) {
+      setDeletingImage(null);
+      setMutationError(
+        "Không thể hoàn tất xóa ảnh: " +
+        displayError(cause) +
+        " Hãy tải lại danh sách rồi thử lại nếu ảnh " +
+        "còn ở trạng thái đang xóa.",
+      );
+      refreshImages();
+      refreshAlbums();
+    } finally {
+      setDeletingBusy(false);
     }
   }
   const albumPagination = albumResult?.pagination;
@@ -553,6 +605,20 @@ export default function AlbumLibrary({
                           {image.upload_status}
                         </p>
                       )}
+                      {(image.upload_status === "ready" ||
+                        image.upload_status === "deleting") && (
+                        <button
+                          type="button"
+                          disabled={busy || uploading || deletingBusy}
+                          onClick={() => requestDeleteImage(image)}
+                          className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50"
+                        >
+                          <Trash2 size={15} />
+                          {image.upload_status === "deleting"
+                            ? "Thử xóa lại"
+                            : "Xóa ảnh"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -583,6 +649,79 @@ export default function AlbumLibrary({
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {deletingImage && (
+        <div
+          role="presentation"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-image-title"
+            aria-describedby="delete-image-description"
+            className="w-full max-w-md space-y-5 rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-red-50 p-3 text-red-600">
+                <Trash2 size={22} />
+              </div>
+              <h3
+                id="delete-image-title"
+                className="text-lg font-bold text-slate-900"
+              >
+                {deletingImage.upload_status === "deleting"
+                  ? "Thử hoàn tất xóa ảnh?"
+                  : "Xác nhận xóa ảnh?"}
+              </h3>
+            </div>
+            <div
+              id="delete-image-description"
+              className="space-y-2 text-sm text-slate-600"
+            >
+              <p className="break-words font-semibold text-slate-900">
+                {deletingImage.original_filename}
+              </p>
+              <p>
+                Ảnh sẽ bị xóa khỏi thư viện và Cloudflare R2.
+                Không thể khôi phục bằng giao diện này.
+              </p>
+              {deletingImage.upload_status === "deleting" && (
+                <p className="text-amber-700">
+                  Ảnh đang chờ hoàn tất xóa. Thao tác này
+                  sẽ thử xử lý lại object trên R2.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                autoFocus
+                disabled={deletingBusy}
+                onClick={() => setDeletingImage(null)}
+                className="rounded-lg border border-slate-200 px-5 py-3 text-sm font-semibold disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={deletingBusy}
+                onClick={handleDeleteImage}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {deletingBusy ? (
+                  <LoaderCircle
+                    size={17}
+                    className="animate-spin"
+                  />
+                ) : (
+                  <Trash2 size={17} />
+                )}
+                {deletingBusy ? "Đang xóa..." : "Xác nhận xóa"}
+              </button>
+            </div>
           </div>
         </div>
       )}
