@@ -1,3 +1,8 @@
+from .publishing.scheduler_views import (
+    PipelineScheduleListCreateAPIView, PipelineScheduleDetailAPIView,
+    SchedulePreviewAPIView, ScheduleRunAPIView, ScheduleBatchListAPIView,
+    AccountGroupEligibilityAPIView, GroupSchedulingHealthAPIView,
+)
 from .publishing.facebook_group_preflight_views import FacebookGroupPreflightAPIView
 from .publishing.job_views import (
     PublishingJobListCreateAPIView,
@@ -41,6 +46,35 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/schedules/",
+        PipelineScheduleListCreateAPIView.as_view(), name="pipeline-schedules",
+    ),
+    path(
+        "pipelines/<uuid:pipeline_id>/schedules/<uuid:schedule_id>/",
+        PipelineScheduleDetailAPIView.as_view(), name="pipeline-schedule-detail",
+    ),
+    path(
+        "pipelines/<uuid:pipeline_id>/schedules/<uuid:schedule_id>/preview/",
+        SchedulePreviewAPIView.as_view(), name="pipeline-schedule-preview",
+    ),
+    path(
+        "pipelines/<uuid:pipeline_id>/schedules/<uuid:schedule_id>/run/",
+        ScheduleRunAPIView.as_view(), name="pipeline-schedule-run",
+    ),
+    path(
+        "pipelines/<uuid:pipeline_id>/schedules/<uuid:schedule_id>/batches/",
+        ScheduleBatchListAPIView.as_view(), name="pipeline-schedule-batches",
+    ),
+    path(
+        "pipelines/<uuid:pipeline_id>/group-eligibility/",
+        AccountGroupEligibilityAPIView.as_view(), name="pipeline-group-eligibility",
+    ),
+    path(
+        "pipelines/<uuid:pipeline_id>/group-health/",
+        GroupSchedulingHealthAPIView.as_view(), name="pipeline-group-health",
+    ),
+
     path(
         "pipelines/<uuid:pipeline_id>/publishing-jobs/<uuid:job_id>/preflight/",
         FacebookGroupPreflightAPIView.as_view(),

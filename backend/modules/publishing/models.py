@@ -472,3 +472,10 @@ class PublishingAttempt(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         return super().save(*args, **kwargs)
+
+
+# Scheduling models live in their own module.
+from .scheduler_models import (
+    PipelineSchedule, AccountGroupEligibility, GroupHealth,
+    AccountProxyPin, ScheduledBatch, ScheduledAssignment,
+)
