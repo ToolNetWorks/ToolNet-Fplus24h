@@ -1,3 +1,4 @@
+from .publishing.facebook_group_preflight_views import FacebookGroupPreflightAPIView
 from .publishing.job_views import (
     PublishingJobListCreateAPIView,
     PublishingJobDetailAPIView,
@@ -40,6 +41,12 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/publishing-jobs/<uuid:job_id>/preflight/",
+        FacebookGroupPreflightAPIView.as_view(),
+        name="facebook-group-preflight",
+    ),
+
     path(
         "pipelines/<uuid:pipeline_id>/publishing-jobs/",
         PublishingJobListCreateAPIView.as_view(),
