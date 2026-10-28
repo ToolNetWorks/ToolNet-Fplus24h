@@ -215,3 +215,34 @@ export async function deleteAlbumImage(
   });
   await parse<{ success: true }>(response);
 }
+export type AlbumImageMove =
+  | {
+      image_id: string;
+      direction: "up" | "down";
+    }
+  | {
+      image_id: string;
+      target_id: string;
+      placement: "before" | "after";
+    };
+export async function moveAlbumImage(
+  pipelineId: string,
+  albumId: string,
+  payload: AlbumImageMove,
+): Promise<void> {
+  const csrfToken = await getCsrfToken();
+  const response = await fetch(
+    `${imagesUrl(pipelineId, albumId)}reorder/`,
+    {
+      method: "PATCH",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  await parse<{ success: true }>(response);
+}

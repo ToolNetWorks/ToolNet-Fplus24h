@@ -1,3 +1,4 @@
+from .albums.image_reorder_views import AlbumImageReorderAPIView
 from .albums.image_delete_views import AlbumImageDeleteAPIView
 from .albums.image_content_views import AlbumImageContentAPIView
 from .albums.image_list_views import AlbumImageCollectionAPIView
@@ -25,6 +26,7 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path("pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/images/reorder/", AlbumImageReorderAPIView.as_view(), name="album-image-reorder"),
     path("pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/images/<uuid:image_id>/", AlbumImageDeleteAPIView.as_view(), name="album-image-delete"),
     path("pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/images/<uuid:image_id>/content/", AlbumImageContentAPIView.as_view(), name="album-image-content"),
     path("pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/images/", AlbumImageCollectionAPIView.as_view(), name="album-image-upload"),

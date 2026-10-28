@@ -9,6 +9,9 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
+  GripVertical,
   ChevronLeft,
   ChevronRight,
   FolderPlus,
@@ -23,12 +26,14 @@ import {
 import {
   createAlbum,
   deleteAlbumImage,
+  moveAlbumImage,
   listAlbums,
   listAlbumImages,
   updateAlbum,
   uploadAlbumImages,
   type Album,
   type AlbumImage,
+  type AlbumImageMove,
   type PageResult,
 } from "../api/albums";
 const inputStyle =
@@ -76,6 +81,8 @@ export default function AlbumLibrary({
   const [deletingImage, setDeletingImage] =
     useState<AlbumImage | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  const [movingId, setMovingId] = useState<string | null>(null);
+  const dragSource = useRef<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const activeAlbum = albumResult?.data.find(
@@ -295,6 +302,56 @@ export default function AlbumLibrary({
     } finally {
       setDeletingBusy(false);
     }
+  }
+  async function handleMoveImage(payload: AlbumImageMove) {
+    if (!selectedId || movingId || busy || uploading || deletingBusy) {
+      return;
+    }
+    setMovingId(payload.image_id);
+    setMutationError("");
+    setSuccess("");
+    try {
+      await moveAlbumImage(
+        pipelineId,
+        selectedId,
+        payload,
+      );
+      setSuccess("Đã lưu thứ tự ảnh.");
+      refreshImages();
+    } catch (cause) {
+      setMutationError(displayError(cause));
+      refreshImages();
+    } finally {
+      setMovingId(null);
+    }
+  }
+  async function handleDropImage(target: AlbumImage) {
+    const sourceId = dragSource.current;
+    dragSource.current = null;
+    if (
+      !sourceId ||
+      sourceId === target.id ||
+      target.upload_status !== "ready"
+    ) {
+      return;
+    }
+    const items = imageResult?.data ?? [];
+    const sourceIndex = items.findIndex(
+      (image) => image.id === sourceId,
+    );
+    const targetIndex = items.findIndex(
+      (image) => image.id === target.id,
+    );
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return;
+    }
+    await handleMoveImage({
+      image_id: sourceId,
+      target_id: target.id,
+      placement: sourceIndex < targetIndex
+        ? "after"
+        : "before",
+    });
   }
   const albumPagination = albumResult?.pagination;
   const imagePagination = imageResult?.pagination;
@@ -545,9 +602,15 @@ export default function AlbumLibrary({
           </form>
           <div className="border-t border-slate-100 pt-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h4 className="font-semibold">
-                Hình ảnh ({imagePagination?.total ?? 0})
-              </h4>
+              <div>
+                <h4 className="font-semibold">
+                  Hình ảnh ({imagePagination?.total ?? 0})
+                </h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  Máy tính: kéo thả để đổi vị trí.
+                  Điện thoại: sử dụng nút lên/xuống.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={refreshImages}
@@ -571,10 +634,45 @@ export default function AlbumLibrary({
               </p>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {imageResult?.data.map((image) => (
+                {imageResult?.data.map((image, index) => (
                   <div
                     key={image.id}
-                    className="overflow-hidden rounded-lg border border-slate-200"
+                    draggable={
+                      image.upload_status === "ready" &&
+                      !busy &&
+                      !uploading &&
+                      !deletingBusy &&
+                      !movingId
+                    }
+                    onDragStart={(event) => {
+                      if (image.upload_status !== "ready") {
+                        event.preventDefault();
+                        return;
+                      }
+                      dragSource.current = image.id;
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData(
+                        "text/plain",
+                        image.id,
+                      );
+                    }}
+                    onDragOver={(event) => {
+                      if (
+                        dragSource.current &&
+                        image.upload_status === "ready"
+                      ) {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                      }
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      void handleDropImage(image);
+                    }}
+                    onDragEnd={() => {
+                      dragSource.current = null;
+                    }}
+                    className="overflow-hidden rounded-lg border border-slate-200 bg-white"
                   >
                     {image.content_url ? (
                       <Image
@@ -591,6 +689,55 @@ export default function AlbumLibrary({
                       </div>
                     )}
                     <div className="space-y-1 p-2">
+                      {image.upload_status === "ready" && (
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600">
+                            <GripVertical size={14} />
+                            #{image.position}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              aria-label={`Di chuyển ${image.original_filename} lên`}
+                              disabled={
+                                movingId !== null ||
+                                busy ||
+                                uploading ||
+                                deletingBusy ||
+                                (imagePage === 1 && index === 0)
+                              }
+                              onClick={() => void handleMoveImage({
+                                image_id: image.id,
+                                direction: "up",
+                              })}
+                              className="rounded-lg border border-slate-200 p-2 disabled:opacity-30"
+                            >
+                              <ArrowUp size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Di chuyển ${image.original_filename} xuống`}
+                              disabled={
+                                movingId !== null ||
+                                busy ||
+                                uploading ||
+                                deletingBusy ||
+                                (
+                                  !imagePagination?.has_next &&
+                                  index === (imageResult?.data.length ?? 0) - 1
+                                )
+                              }
+                              onClick={() => void handleMoveImage({
+                                image_id: image.id,
+                                direction: "down",
+                              })}
+                              className="rounded-lg border border-slate-200 p-2 disabled:opacity-30"
+                            >
+                              <ArrowDown size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <p
                         title={image.original_filename}
                         className="truncate text-xs font-medium"
