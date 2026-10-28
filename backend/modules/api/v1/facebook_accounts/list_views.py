@@ -1,5 +1,5 @@
 from django.core.paginator import EmptyPage, Paginator
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import Http404
 from rest_framework import serializers
 from rest_framework.authentication import SessionAuthentication
@@ -8,6 +8,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from modules.facebook_accounts.models import FacebookAccount
 from modules.pipelines.models import Pipeline
+
+
 class FacebookAccountFilterSerializer(serializers.Serializer):
     page = serializers.IntegerField(
         min_value=1,
@@ -28,9 +30,12 @@ class FacebookAccountFilterSerializer(serializers.Serializer):
         required=False,
         choices=FacebookAccount.ConnectionStatus.choices,
     )
+
+
 class FacebookAccountListAPIView(APIView):
     authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
+
     def get(self, request, pipeline_id):
         user = request.user
         if not user.is_active:
@@ -58,14 +63,39 @@ class FacebookAccountListAPIView(APIView):
         )
         filters.is_valid(raise_exception=True)
         params = filters.validated_data
-        queryset = FacebookAccount.objects.filter(
+
+        base_queryset = FacebookAccount.objects.filter(
             pipeline_id=pipeline.pk
-        ).order_by("-created_at", "-id")
+        )
+        summary = base_queryset.aggregate(
+            total=Count("id"),
+            connected=Count(
+                "id",
+                filter=Q(connection_status="connected"),
+            ),
+            not_connected=Count(
+                "id",
+                filter=Q(connection_status="not_connected"),
+            ),
+            expired=Count(
+                "id",
+                filter=Q(connection_status="expired"),
+            ),
+            disabled=Count(
+                "id",
+                filter=Q(connection_status="disabled"),
+            ),
+        )
+        queryset = base_queryset.order_by(
+            "-created_at", "-id"
+        )
+
         search = params.get("search", "")
         if search:
             queryset = queryset.filter(
                 Q(label__icontains=search)
                 | Q(profile_url__icontains=search)
+                | Q(facebook_user_id__icontains=search)
             )
         selected_status = params.get("status")
         if selected_status:
@@ -92,6 +122,7 @@ class FacebookAccountListAPIView(APIView):
                 "pipeline_id": str(account.pipeline_id),
                 "label": account.label,
                 "profile_url": account.profile_url,
+                "facebook_user_id": account.facebook_user_id,
                 "connection_status": account.connection_status,
                 "last_verified_at": (
                     account.last_verified_at.isoformat()
@@ -106,6 +137,7 @@ class FacebookAccountListAPIView(APIView):
         return Response({
             "success": True,
             "data": items,
+            "summary": summary,
             "pagination": {
                 "page": page.number,
                 "page_size": params["page_size"],

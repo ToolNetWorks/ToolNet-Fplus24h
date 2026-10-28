@@ -1,16 +1,9 @@
 "use client";
-import AlbumLibrary from "@/features/albums/components/AlbumLibrary";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  AlertCircle,
-  Users,
-  LoaderCircle,
-  ShieldCheck,
-  Workflow,
-} from "lucide-react";
-import FacebookAccountsPanel from "@/features/facebook-accounts/components/FacebookAccountsPanel";
-import FacebookGroupsPanel from "@/features/facebook-groups/components/FacebookGroupsPanel";
+import { AlertCircle, LoaderCircle } from "lucide-react";
+import CTVShell from "./CTVShell";
 interface WorkspaceData {
   pipeline: {
     id: string;
@@ -143,83 +136,5 @@ export default function CTVWorkspace() {
       </main>
     );
   }
-  return (
-    <main className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-5">
-          <div>
-            <p className="text-xs font-bold tracking-wider text-blue-600">
-              TOOLNET PUBLISHER
-            </p>
-            <h1 className="mt-1 text-xl font-bold text-slate-900">
-              Workspace CTV
-            </h1>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <ShieldCheck size={18} />
-            {workspace.ctv.username}
-          </div>
-        </div>
-      </header>
-      <div className="mx-auto max-w-6xl space-y-7 px-4 py-7">
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-start gap-3">
-            <Workflow
-              size={24}
-              className="mt-1 text-blue-600"
-            />
-            <div className="min-w-0">
-              <p className="text-xs text-slate-500">
-                Pipeline được cấp
-              </p>
-              <h2 className="mt-1 break-words text-xl font-bold">
-                {workspace.pipeline.name}
-              </h2>
-              <p className="mt-2 text-sm text-green-700">
-                Đang hoạt động
-              </p>
-            </div>
-          </div>
-        </section>
-        <section className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <Users
-              size={23}
-              className="text-blue-600"
-            />
-            <p className="mt-4 text-sm text-slate-500">
-              Tổng tài khoản Facebook
-            </p>
-            <p className="mt-2 text-3xl font-bold">
-              {workspace.stats.facebook_accounts}
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <ShieldCheck
-              size={23}
-              className="text-green-600"
-            />
-            <p className="mt-4 text-sm text-slate-500">
-              Phiên đã xác minh
-            </p>
-            <p className="mt-2 text-3xl font-bold">
-              {workspace.stats.connected_accounts}
-            </p>
-          </div>
-        </section>
-        <FacebookAccountsPanel
-          pipelineId={workspace.pipeline.id}
-          backHref={null}
-        />
-        <FacebookGroupsPanel
-          pipelineId={workspace.pipeline.id}
-          backHref={null}
-        />
-        <AlbumLibrary
-          pipelineId={workspace.pipeline.id}
-          backHref={null}
-        />
-      </div>
-    </main>
-  );
+  return <CTVShell workspace={workspace} />;
 }
