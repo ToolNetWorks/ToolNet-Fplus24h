@@ -17,6 +17,7 @@ import {
   LogOut,
   Layers3,
   ShieldCheck,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import { getCsrfToken } from "@/features/auth/api/auth-client";
@@ -24,9 +25,10 @@ import CTVAccountsTable from "./CTVAccountsTable";
 import CTVProxyTable from "./CTVProxyTable";
 import CTVGroupsTable from "./CTVGroupsTable";
 import CTVAlbumsTable from "./CTVAlbumsTable";
+import CTVMediaSources from "./CTVMediaSources";
 import "./ctv-shell.css";
 
-type Tab = "overview" | "accounts" | "proxies" | "groups" | "albums";
+type Tab = "overview" | "accounts" | "proxies" | "groups" | "albums" | "media";
 
 interface WorkspacePayload {
   pipeline: {
@@ -92,6 +94,7 @@ const navigation: {
   {
     heading: "CHỨC NĂNG ĐĂNG BÀI",
     items: [
+      { label: "Cấu hình Album nguồn", icon: SlidersHorizontal, tab: "media" },
       { label: "Đăng bài viết nhóm", icon: FileText },
       { label: "AI viết Caption", icon: Sparkles },
       { label: "Lịch đăng bài", icon: CalendarDays },
@@ -112,6 +115,7 @@ const titles: Record<Tab, string> = {
   proxies: "Quản lý Proxy",
   groups: "Quản lý Facebook Groups",
   albums: "Thư viện Album ảnh",
+  media: "Cấu hình Album nguồn",
 };
 
 const STORAGE_KEY = "toolnet-ctv-sidebar-collapsed";
@@ -122,6 +126,7 @@ export default function CTVShell({
   workspace: WorkspacePayload;
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("accounts");
+  const [mediaDirty, setMediaDirty] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -147,7 +152,16 @@ export default function CTVShell({
   }, [mobileOpen]);
 
   function selectTab(tab: Tab) {
+    if (tab === activeTab) {
+      setMobileOpen(false);
+      return;
+    }
+    if (activeTab === "media" && mediaDirty &&
+        !window.confirm("Cấu hình Album nguồn có thay đổi chưa lưu. Rời trang và bỏ thay đổi?")) {
+      return;
+    }
     setActiveTab(tab);
+    setMediaDirty(false);
     setMobileOpen(false);
   }
 
@@ -363,6 +377,12 @@ export default function CTVShell({
           )}
           {activeTab === "albums" && (
             <CTVAlbumsTable pipelineId={workspace.pipeline.id} />
+          )}
+          {activeTab === "media" && (
+            <CTVMediaSources
+              pipelineId={workspace.pipeline.id}
+              onDirtyChange={setMediaDirty}
+            />
           )}
         </main>
       </div>
