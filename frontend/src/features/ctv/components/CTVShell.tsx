@@ -29,11 +29,12 @@ import CTVMediaSources from "./CTVMediaSources";
 import CTVPublishingJobs from "./CTVPublishingJobs";
 import CTVScheduler from "./CTVScheduler";
 import CTVDashboard from "./CTVDashboard";
+import CTVOperationsDashboard from "./CTVOperationsDashboard";
 import CTVPublishingReports from "./CTVPublishingReports";
 import CTVReconciliation from "./CTVReconciliation";
 import "./ctv-shell.css";
 
-type Tab = "overview" | "accounts" | "proxies" | "groups" | "albums" | "media" | "jobs" | "scheduler" | "reports" | "reconciliation";
+type Tab = "overview" | "operations" | "accounts" | "proxies" | "groups" | "albums" | "media" | "jobs" | "scheduler" | "reports" | "reconciliation";
 
 interface WorkspacePayload {
   pipeline: {
@@ -69,6 +70,7 @@ const navigation: {
         icon: LayoutDashboard,
         tab: "overview",
       },
+      { label: "Giám sát vận hành", icon: ShieldCheck, tab: "operations" },
     ],
   },
   {
@@ -118,6 +120,7 @@ const navigation: {
 
 const titles: Record<Tab, string> = {
   overview: "Tổng quan Pipeline",
+  operations: "Giám sát vận hành",
   accounts: "Danh sách tài khoản",
   proxies: "Quản lý Proxy",
   groups: "Quản lý Facebook Groups",
@@ -242,7 +245,7 @@ export default function CTVShell({
           </div>
           <div className="ctv-brand-wordmark">
             <strong>TOOLNET</strong>
-            <span>PUBLISHER</span>
+            <span>FPLUS24H</span>
           </div>
           <button
             type="button"
@@ -353,6 +356,9 @@ export default function CTVShell({
         <main id="ctv-main-content" className="ctv-content">
           {activeTab === "overview" && (
             <CTVDashboard pipelineId={workspace.pipeline.id} pipelineName={workspace.pipeline.name} onNavigate={selectTab} />
+          )}
+          {activeTab === "operations" && (
+            <CTVOperationsDashboard pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "accounts" && (
             <CTVAccountsTable pipelineId={workspace.pipeline.id} />
