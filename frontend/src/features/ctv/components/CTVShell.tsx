@@ -9,6 +9,7 @@ import {
   CalendarDays,
   FileText,
   ClipboardCheck,
+  Activity,
   MessageSquare,
   Sparkles,
   Menu,
@@ -32,6 +33,7 @@ import CTVPublishingJobs from "./CTVPublishingJobs";
 import CTVManualPublishing from "./CTVManualPublishing";
 import CTVPilotTesting from "./CTVPilotTesting";
 import CTVSecurityAudit from "./CTVSecurityAudit";
+import CTVPerformanceStability from "./CTVPerformanceStability";
 import CTVScheduler from "./CTVScheduler";
 import CTVDashboard from "./CTVDashboard";
 import CTVOperationsDashboard from "./CTVOperationsDashboard";
@@ -40,7 +42,7 @@ import CTVPublishingReports from "./CTVPublishingReports";
 import CTVReconciliation from "./CTVReconciliation";
 import "./ctv-shell.css";
 
-type Tab = "overview" | "operations" | "alerts" | "accounts" | "proxies" | "groups" | "albums" | "media" | "publishing" | "pilot" | "security" | "jobs" | "scheduler" | "reports" | "reconciliation";
+type Tab = "overview" | "operations" | "alerts" | "accounts" | "proxies" | "groups" | "albums" | "media" | "publishing" | "pilot" | "security" | "performance" | "jobs" | "scheduler" | "reports" | "reconciliation";
 
 interface WorkspacePayload {
   pipeline: {
@@ -113,6 +115,7 @@ const navigation: {
       { label: "Đăng bài viết nhóm", icon: FileText, tab: "publishing" },
       { label: "Kiểm thử Pilot", icon: ClipboardCheck, tab: "pilot" },
       { label: "Kiểm toán bảo mật", icon: ShieldCheck, tab: "security" },
+      { label: "Hiệu năng & ổn định", icon: Activity, tab: "performance" },
       { label: "AI viết Caption", icon: Sparkles },
       { label: "Lịch đăng bài", icon: CalendarDays, tab: "jobs" },
       { label: "Lịch sử đăng bài", icon: Layers3, tab: "reports" },
@@ -139,6 +142,7 @@ const titles: Record<Tab, string> = {
   publishing: "Đăng bài viết nhóm",
   pilot: "Kiểm thử Pilot",
   security: "Kiểm toán bảo mật",
+  performance: "Hiệu năng & ổn định",
   jobs: "Lịch đăng bài & Hàng đợi",
   scheduler: "Cấu hình lịch tự động",
   reports: "Lịch sử đăng bài & Báo cáo",
@@ -396,6 +400,9 @@ export default function CTVShell({
           )}
           {activeTab === "security" && (
             <CTVSecurityAudit pipelineId={workspace.pipeline.id} />
+          )}
+          {activeTab === "performance" && (
+            <CTVPerformanceStability pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "jobs" && (
             <CTVPublishingJobs pipelineId={workspace.pipeline.id} />
