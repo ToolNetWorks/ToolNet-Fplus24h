@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, FilePlus2, RefreshCw, X } from "lucide-react";
 import type { ReviewJob } from "../api/reconciliation";
 import CTVReviewSLA from "./CTVReviewSLA";
+import CTVPostVerification from "./CTVPostVerification";
 import {
   createReviewCase, getReviewCase, listReviewCases, reviewCaseAction,
   type ReviewAction, type ReviewCase, type ReviewList, type ReviewStatus,
@@ -174,6 +175,7 @@ export default function CTVReviewCases({ pipelineId, flaggedJobs }: {
           </label>
           <button type="button" disabled={busy || note.trim().length < 10 || !selected.assigned_to} className={primary} onClick={() => void act("add_evidence")}>Lưu bằng chứng vào lịch sử</button>
         </div>}
+        <CTVPostVerification key={selected.job_id} pipelineId={pipelineId} jobId={selected.job_id} />
         <div><h4 className="mb-2 text-sm font-semibold">Lịch sử sự kiện ({selected.event_count ?? 0})</h4>
           <div className="max-h-[300px] space-y-2 overflow-y-auto">
             {selected.events?.map((event) => <div key={event.id} className="rounded-lg border p-3 text-xs">

@@ -8,6 +8,7 @@ from .publishing.review_case_views import (
 )
 from .publishing.review_sla_views import ReviewSLAAPIView
 from .publishing.reconciliation_views import PublishingReconciliationAPIView
+from .publishing.post_verification_views import PublishingJobVerificationAPIView
 from .publishing.scheduler_tick_views import SchedulerTickStatusAPIView
 from .publishing.scheduler_views import (
     PipelineScheduleListCreateAPIView, PipelineScheduleDetailAPIView,
@@ -57,6 +58,10 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/publishing-jobs/<uuid:job_id>/verification/",
+        PublishingJobVerificationAPIView.as_view(), name="publishing-job-verification",
+    ),
     path(
         "pipelines/<uuid:pipeline_id>/review-sla/",
         ReviewSLAAPIView.as_view(), name="pipeline-review-sla",
