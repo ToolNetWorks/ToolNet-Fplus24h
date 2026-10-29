@@ -59,6 +59,7 @@ from django.urls import path
 from .views import AdminOverviewView
 from .auth_views import (
     csrf_token,
+    unified_login,
     admin_login,
     admin_me,
     admin_logout,

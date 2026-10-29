@@ -50,6 +50,7 @@ response = client.post(
     content_type="application/json",
     secure=True,
     HTTP_X_CSRFTOKEN=token,
+    HTTP_REFERER="https://127.0.0.1/",
 )
 
 check(response.status_code == 401, "Invalid login rejected")

@@ -6,6 +6,7 @@ from django.middleware.csrf import get_token
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
+from modules.pipelines.models import Pipeline
 
 
 def json_error(message, status=400):
@@ -28,7 +29,7 @@ def csrf_token(request):
 @require_POST
 @never_cache
 @csrf_protect
-def admin_login(request):
+def unified_login(request):
     if request.content_type != "application/json":
         return json_error("Yêu cầu JSON.", 415)
 
@@ -49,6 +50,7 @@ def admin_login(request):
     if not isinstance(username, str) or not isinstance(password, str):
         return json_error("Thiếu thông tin đăng nhập.")
 
+    username = username.strip()
     if not username or not password:
         return json_error("Thiếu tài khoản hoặc mật khẩu.")
 
@@ -61,8 +63,32 @@ def admin_login(request):
     if user is None:
         return json_error("Thông tin đăng nhập không hợp lệ.", 401)
 
-    if not user.is_active or not user.is_superuser:
-        return json_error("Không có quyền quản trị.", 403)
+    if not user.is_active:
+        return json_error("Tài khoản đã bị vô hiệu hóa.", 403)
+
+    # 1. Admin must have BOTH is_staff=True and is_superuser=True
+    if user.is_superuser and user.is_staff:
+        role = "admin"
+        redirect_to = "/"
+        pipeline_id = None
+    elif user.is_staff or user.is_superuser:
+        # Invalid role combination: staff-only or superuser-only
+        return json_error("Tài khoản không được cấp quyền.", 403)
+    else:
+        # 2. CTV: Must have an ACTIVE Pipeline belonging to them
+        pipeline = Pipeline.objects.filter(
+            ctv_id=user.pk,
+        ).only("id", "status").first()
+
+        if pipeline is None:
+            return json_error("Tài khoản chưa được gắn Pipeline.", 403)
+
+        if pipeline.status != Pipeline.Status.ACTIVE:
+            return json_error("Pipeline đang bị khóa.", 403)
+
+        role = "ctv"
+        redirect_to = "/workspace/"
+        pipeline_id = str(pipeline.pk)
 
     login(request, user)
 
@@ -71,9 +97,15 @@ def admin_login(request):
         "user": {
             "id": user.pk,
             "username": user.username,
-            "role": "admin",
+            "role": role,
+            "redirect_to": redirect_to,
+            "pipeline_id": pipeline_id,
         },
     })
+
+
+# Backward compatibility alias
+admin_login = unified_login
 
 
 @require_GET
@@ -84,7 +116,7 @@ def admin_me(request):
     if not user.is_authenticated or not user.is_active:
         return json_error("Chưa đăng nhập.", 401)
 
-    if not user.is_superuser:
+    if not (user.is_superuser and user.is_staff):
         return json_error("Không có quyền quản trị.", 403)
 
     return JsonResponse({
@@ -93,6 +125,8 @@ def admin_me(request):
             "id": user.pk,
             "username": user.username,
             "role": "admin",
+            "redirect_to": "/",
+            "pipeline_id": None,
         },
     })
 

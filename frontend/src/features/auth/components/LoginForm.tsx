@@ -1,50 +1,12 @@
 "use client";
 
-async function redirectAfterRoleCheck(): Promise<void> {
-  try {
-    const response = await fetch("/api/v1/auth/landing/", {
-      method: "GET",
-      credentials: "same-origin",
-      cache: "no-store",
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok || result.success !== true) {
-      throw new Error(
-        result.message ||
-        result.detail ||
-        "Không thể xác định quyền tài khoản.",
-      );
-    }
-    const destination = result.data?.redirect_to;
-    const role = result.data?.role;
-    if (role === "admin" && destination === "/") {
-      window.location.replace("/");
-      return;
-    }
-    if (role === "ctv" && destination === "/workspace/") {
-      window.location.replace("/workspace/");
-      return;
-    }
-    throw new Error("Quyền đăng nhập không hợp lệ.");
-  } catch (error) {
-    window.alert(
-      error instanceof Error
-        ? error.message
-        : "Không thể xác định Workspace.",
-    );
-  }
-}
-
 import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { Eye, EyeOff, LockKeyhole, UserRound } from "lucide-react";
 
-import { loginAdmin } from "../api/auth-client";
+import { loginUser, AuthError } from "../api/auth-client";
 import styles from "./LoginForm.module.css";
 
 export default function LoginForm() {
-  const router = useRouter();
-
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -65,18 +27,34 @@ export default function LoginForm() {
     setError("");
 
     try {
-      await loginAdmin({
+      const user = await loginUser({
         username: username.trim(),
         password,
       });
 
       setPassword("");
-      void redirectAfterRoleCheck();
-      router.refresh();
-    } catch {
-      setError(
-        "Đăng nhập thất bại. Kiểm tra thông tin hoặc kết nối."
-      );
+
+      // 1. Admin chuyển đến /
+      if (user.role === "admin" || user.redirect_to === "/") {
+        window.location.replace("/");
+        return;
+      }
+
+      // 2. CTV chuyển đến /workspace/
+      if (user.role === "ctv" || user.redirect_to === "/workspace/") {
+        window.location.replace("/workspace/");
+        return;
+      }
+
+      window.location.replace("/workspace/");
+    } catch (err: unknown) {
+      if (err instanceof AuthError) {
+        setError(err.message);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Đăng nhập thất bại. Kiểm tra thông tin hoặc kết nối.");
+      }
     } finally {
       setLoading(false);
     }
@@ -89,13 +67,13 @@ export default function LoginForm() {
           <div className={styles.logo}>T</div>
           <div className={styles.brandName}>
             <strong>TOOLNET</strong>
-            <span>PUBLISHER</span>
+            <span>FPLUS24H</span>
           </div>
         </div>
 
         <div className={styles.heading}>
-          <h1>Đăng nhập quản trị</h1>
-          <p>Quản lý Pipeline và cộng tác viên</p>
+          <h1>Đăng nhập hệ thống</h1>
+          <p>ToolNet Fplus24h · Dành cho Quản trị viên và Cộng tác viên</p>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -154,7 +132,7 @@ export default function LoginForm() {
         </form>
 
         <div className={styles.footer}>
-          ToolNet Publisher · Admin Control Center
+          ToolNet Fplus24h · Quản trị Pipeline & CTV Workspace
         </div>
       </section>
     </main>

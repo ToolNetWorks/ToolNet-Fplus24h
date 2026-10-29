@@ -1,5 +1,5 @@
 import type {
-  AdminUser,
+  AuthUser,
   CsrfResponse,
   LoginCredentials,
   LoginResponse,
@@ -20,8 +20,9 @@ async function parseResponse<T>(
   const body: unknown = await response.json().catch(() => null);
 
   if (!response.ok) {
+    const errorBody = body as { message?: string } | null;
     throw new AuthError(
-      "Yêu cầu thất bại. Vui lòng thử lại."
+      errorBody?.message || "Yêu cầu thất bại. Vui lòng thử lại."
     );
   }
 
@@ -48,9 +49,9 @@ export async function getCsrfToken(): Promise<string> {
   return data.csrfToken;
 }
 
-export async function loginAdmin(
+export async function loginUser(
   credentials: LoginCredentials
-): Promise<AdminUser> {
+): Promise<AuthUser> {
   const csrfToken = await getCsrfToken();
 
   const response = await fetch(`${API_BASE}/login/`, {
@@ -66,9 +67,11 @@ export async function loginAdmin(
 
   const data = await parseResponse<LoginResponse>(response);
 
-  if (!data.success || data.user?.role !== "admin") {
-    throw new AuthError("Đăng nhập không thành công.");
+  if (!data.success || !data.user || (data.user.role !== "admin" && data.user.role !== "ctv")) {
+    throw new AuthError(data.message || "Đăng nhập không thành công.");
   }
 
   return data.user;
 }
+
+export const loginAdmin = loginUser;
