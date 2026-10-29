@@ -13,4 +13,4 @@ class IsSuperAdmin(BasePermission):
         if not user.is_active:
             return False
 
-        return user.is_superuser
+        return user.is_staff and user.is_superuser

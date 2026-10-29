@@ -67,7 +67,7 @@ def unified_login(request):
         return json_error("Tài khoản đã bị vô hiệu hóa.", 403)
 
     # 1. Admin must have BOTH is_staff=True and is_superuser=True
-    if user.is_superuser and user.is_staff:
+    if user.is_staff and user.is_superuser:
         role = "admin"
         redirect_to = "/"
         pipeline_id = None
@@ -116,7 +116,7 @@ def admin_me(request):
     if not user.is_authenticated or not user.is_active:
         return json_error("Chưa đăng nhập.", 401)
 
-    if not (user.is_superuser and user.is_staff):
+    if not (user.is_staff and user.is_superuser):
         return json_error("Không có quyền quản trị.", 403)
 
     return JsonResponse({

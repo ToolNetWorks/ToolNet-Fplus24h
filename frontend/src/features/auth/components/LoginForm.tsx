@@ -35,13 +35,13 @@ export default function LoginForm() {
       setPassword("");
 
       // 1. Admin chuyển đến /
-      if (user.role === "admin" || user.redirect_to === "/") {
+      if (user.role === "admin") {
         window.location.replace("/");
         return;
       }
 
       // 2. CTV chuyển đến /workspace/
-      if (user.role === "ctv" || user.redirect_to === "/workspace/") {
+      if (user.role === "ctv") {
         window.location.replace("/workspace/");
         return;
       }

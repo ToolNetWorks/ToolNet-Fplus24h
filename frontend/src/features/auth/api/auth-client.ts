@@ -67,8 +67,8 @@ export async function loginUser(
 
   const data = await parseResponse<LoginResponse>(response);
 
-  if (!data.success || !data.user || (data.user.role !== "admin" && data.user.role !== "ctv")) {
-    throw new AuthError(data.message || "Đăng nhập không thành công.");
+  if (!data.success || (data.user?.role !== "admin" && data.user?.role !== "ctv")) {
+    throw new AuthError("Đăng nhập không thành công.");
   }
 
   return data.user;

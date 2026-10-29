@@ -1,14 +1,16 @@
-export type UserRole = "admin" | "ctv";
-
-export interface AuthUser {
+export interface AdminUser {
   id: number;
   username: string;
-  role: UserRole;
-  redirect_to?: string;
-  pipeline_id?: string | null;
+  role: "admin";
 }
 
-export type AdminUser = AuthUser;
+export interface CTVUser {
+  id: number;
+  username: string;
+  role: "ctv";
+}
+
+export type AuthUser = AdminUser | CTVUser;
 
 export interface LoginCredentials {
   username: string;
@@ -17,8 +19,7 @@ export interface LoginCredentials {
 
 export interface LoginResponse {
   success: boolean;
-  message?: string;
-  user?: AuthUser;
+  user: AuthUser;
 }
 
 export interface CsrfResponse {
