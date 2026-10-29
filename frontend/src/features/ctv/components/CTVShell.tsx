@@ -8,6 +8,7 @@ import {
   Images,
   CalendarDays,
   FileText,
+  ClipboardCheck,
   MessageSquare,
   Sparkles,
   Menu,
@@ -29,6 +30,7 @@ import CTVAlbumsTable from "./CTVAlbumsTable";
 import CTVMediaSources from "./CTVMediaSources";
 import CTVPublishingJobs from "./CTVPublishingJobs";
 import CTVManualPublishing from "./CTVManualPublishing";
+import CTVPilotTesting from "./CTVPilotTesting";
 import CTVScheduler from "./CTVScheduler";
 import CTVDashboard from "./CTVDashboard";
 import CTVOperationsDashboard from "./CTVOperationsDashboard";
@@ -37,7 +39,7 @@ import CTVPublishingReports from "./CTVPublishingReports";
 import CTVReconciliation from "./CTVReconciliation";
 import "./ctv-shell.css";
 
-type Tab = "overview" | "operations" | "alerts" | "accounts" | "proxies" | "groups" | "albums" | "media" | "publishing" | "jobs" | "scheduler" | "reports" | "reconciliation";
+type Tab = "overview" | "operations" | "alerts" | "accounts" | "proxies" | "groups" | "albums" | "media" | "publishing" | "pilot" | "jobs" | "scheduler" | "reports" | "reconciliation";
 
 interface WorkspacePayload {
   pipeline: {
@@ -108,6 +110,7 @@ const navigation: {
       { label: "Cấu hình Album nguồn", icon: SlidersHorizontal, tab: "media" },
       { label: "Cấu hình lịch tự động", icon: CalendarDays, tab: "scheduler" },
       { label: "Đăng bài viết nhóm", icon: FileText, tab: "publishing" },
+      { label: "Kiểm thử Pilot", icon: ClipboardCheck, tab: "pilot" },
       { label: "AI viết Caption", icon: Sparkles },
       { label: "Lịch đăng bài", icon: CalendarDays, tab: "jobs" },
       { label: "Lịch sử đăng bài", icon: Layers3, tab: "reports" },
@@ -132,6 +135,7 @@ const titles: Record<Tab, string> = {
   albums: "Thư viện Album ảnh",
   media: "Cấu hình Album nguồn",
   publishing: "Đăng bài viết nhóm",
+  pilot: "Kiểm thử Pilot",
   jobs: "Lịch đăng bài & Hàng đợi",
   scheduler: "Cấu hình lịch tự động",
   reports: "Lịch sử đăng bài & Báo cáo",
@@ -383,6 +387,9 @@ export default function CTVShell({
           )}
           {activeTab === "publishing" && (
             <CTVManualPublishing pipelineId={workspace.pipeline.id} />
+          )}
+          {activeTab === "pilot" && (
+            <CTVPilotTesting pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "jobs" && (
             <CTVPublishingJobs pipelineId={workspace.pipeline.id} />

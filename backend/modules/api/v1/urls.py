@@ -10,6 +10,7 @@ from .publishing.review_sla_views import ReviewSLAAPIView
 from .publishing.integrity_audit_views import PublishingIntegrityAuditAPIView
 from .publishing.operations_health_views import OperationsHealthAPIView
 from .publishing.manual_handoff_views import ManualHandoffAPIView
+from .publishing.pilot_views import PublishingPilotReadinessAPIView
 from .publishing.worker_reliability_views import WorkerGuardAPIView
 from .publishing.alert_views import PublishingAlertsAPIView, PublishingAlertActionAPIView, PublishingAlertEventsAPIView
 from .publishing.reconciliation_views import PublishingReconciliationAPIView
@@ -64,6 +65,8 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path("pipelines/<uuid:pipeline_id>/pilot-readiness/",
+         PublishingPilotReadinessAPIView.as_view(), name="pipeline-pilot-readiness"),
     path("pipelines/<uuid:pipeline_id>/publishing-jobs/<uuid:job_id>/manual-handoff/",
          ManualHandoffAPIView.as_view(), name="publishing-manual-handoff"),
     path("pipelines/<uuid:pipeline_id>/worker-guard/",
