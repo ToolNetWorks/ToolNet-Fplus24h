@@ -17,6 +17,7 @@ import {
   LogOut,
   Layers3,
   ShieldCheck,
+  Bell,
   SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
@@ -30,11 +31,12 @@ import CTVPublishingJobs from "./CTVPublishingJobs";
 import CTVScheduler from "./CTVScheduler";
 import CTVDashboard from "./CTVDashboard";
 import CTVOperationsDashboard from "./CTVOperationsDashboard";
+import CTVAlertInbox from "./CTVAlertInbox";
 import CTVPublishingReports from "./CTVPublishingReports";
 import CTVReconciliation from "./CTVReconciliation";
 import "./ctv-shell.css";
 
-type Tab = "overview" | "operations" | "accounts" | "proxies" | "groups" | "albums" | "media" | "jobs" | "scheduler" | "reports" | "reconciliation";
+type Tab = "overview" | "operations" | "alerts" | "accounts" | "proxies" | "groups" | "albums" | "media" | "jobs" | "scheduler" | "reports" | "reconciliation";
 
 interface WorkspacePayload {
   pipeline: {
@@ -71,6 +73,7 @@ const navigation: {
         tab: "overview",
       },
       { label: "Giám sát vận hành", icon: ShieldCheck, tab: "operations" },
+      { label: "Thông báo & Cảnh báo", icon: Bell, tab: "alerts" },
     ],
   },
   {
@@ -121,6 +124,7 @@ const navigation: {
 const titles: Record<Tab, string> = {
   overview: "Tổng quan Pipeline",
   operations: "Giám sát vận hành",
+  alerts: "Thông báo & Cảnh báo",
   accounts: "Danh sách tài khoản",
   proxies: "Quản lý Proxy",
   groups: "Quản lý Facebook Groups",
@@ -359,6 +363,9 @@ export default function CTVShell({
           )}
           {activeTab === "operations" && (
             <CTVOperationsDashboard pipelineId={workspace.pipeline.id} />
+          )}
+          {activeTab === "alerts" && (
+            <CTVAlertInbox pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "accounts" && (
             <CTVAccountsTable pipelineId={workspace.pipeline.id} />

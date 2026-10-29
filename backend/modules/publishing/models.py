@@ -484,3 +484,5 @@ from .scheduler_tick_models import SchedulerTickAudit
 from .review_models import PublishingReviewCase, PublishingReviewEvent
 from .verification_models import PostVerificationObservation, TrustedPostVerification
 from .readback_models import PostSubmissionReference, PostReadbackAudit
+
+from .alert_models import (PublishingAlertIncident, PublishingAlertEvent, PublishingAlertScan)

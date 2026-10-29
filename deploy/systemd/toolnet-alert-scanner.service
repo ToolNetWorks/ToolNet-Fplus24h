@@ -1,0 +1,16 @@
+[Unit]
+Description=ToolNet Fplus24h operational alert scan (no external delivery)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/toolnet-group-publisher/backend
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/root/toolnet-group-publisher/.venv/bin/python manage.py publishing_alerts --scan --all --limit 500
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
