@@ -486,4 +486,5 @@ from .verification_models import PostVerificationObservation, TrustedPostVerific
 from .readback_models import PostSubmissionReference, PostReadbackAudit
 
 from .alert_models import (PublishingAlertIncident, PublishingAlertEvent, PublishingAlertScan)
+from .manual_handoff_models import ManualPublishingHandoff, ManualPublishingEvent
 from .worker_models import WorkerLeaseEvent

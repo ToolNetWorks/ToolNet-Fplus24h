@@ -140,13 +140,14 @@ def claim_due_job(*, pipeline_id, worker_id, lease_seconds=600):
         return None
     now = timezone.now()
     blocked_accounts, blocked_groups = held_subject_ids(pipeline_id=pipeline.pk)
-    job = (PublishingJob.objects.select_for_update()
+    job = (PublishingJob.objects.select_for_update(of=('self',))
            .filter(pipeline_id=pipeline.pk, state=PublishingJob.State.QUEUED,
                    facebook_account__connection_status=FacebookAccount.ConnectionStatus.CONNECTED,
                    facebook_group__is_enabled=True,
                    next_run_at__lte=now, attempt_count__lt=5)
            .exclude(facebook_account_id__in=blocked_accounts)
            .exclude(facebook_group_id__in=blocked_groups)
+           .exclude(manual_handoff__state='prepared')
            .order_by("next_run_at", "scheduled_at", "id").first())
     if job is None:
         return None
@@ -348,6 +349,8 @@ def cancel_queued_job(*, pipeline_id, job_id):
     job = _job(pipeline_id, job_id)
     if job.state != PublishingJob.State.QUEUED:
         raise JobConflict("Chỉ có thể hủy Job đang chờ.")
+    if hasattr(job, "manual_handoff"):
+        raise JobConflict("Job đã bàn giao thủ công; hủy qua quy trình handoff.")
     job.state = PublishingJob.State.CANCELLED
     job.finalized_at = timezone.now()
     job.save()

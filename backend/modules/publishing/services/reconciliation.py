@@ -61,6 +61,7 @@ def held_subject_ids(*, pipeline_id):
     rows = PublishingJob.objects.filter(pipeline_id=pipeline_id).filter(
         Q(state__in=HOLD_STATES)
         | Q(state=PublishingJob.State.PUBLISHED, external_post_id='')
+        | Q(state=PublishingJob.State.QUEUED, manual_handoff__state='prepared')
     ).values_list('facebook_account_id', 'facebook_group_id').distinct()
     account_ids = set()
     group_ids = set()
