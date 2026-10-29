@@ -85,7 +85,7 @@ def reconciliation_snapshot(*, pipeline_id, page=1, page_size=20, now=None):
         raise ValueError('Thời gian không có múi giờ.')
 
     all_jobs = PublishingJob.objects.filter(pipeline_id=pipeline_id)
-    flagged = all_jobs.filter(_risk_filter(now))
+    flagged = all_jobs.filter(_risk_filter(now)).exclude(review_case__status='closed')
     counts = all_jobs.aggregate(
         total=Count('pk'),
         queued=Count('pk', filter=Q(state=PublishingJob.State.QUEUED)),
