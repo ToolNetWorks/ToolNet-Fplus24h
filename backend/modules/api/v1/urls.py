@@ -1,3 +1,8 @@
+from .publishing.report_views import (
+    PipelineReportSummaryAPIView, PipelineReportBatchesAPIView,
+    PipelineReportBatchDetailAPIView, PipelineReportGroupsAPIView,
+    PipelineReportAccountsAPIView,
+)
 from .publishing.scheduler_tick_views import SchedulerTickStatusAPIView
 from .publishing.scheduler_views import (
     PipelineScheduleListCreateAPIView, PipelineScheduleDetailAPIView,
@@ -47,6 +52,17 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    # Read-only Pipeline reporting (Step 9.7.5).
+    path("pipelines/<uuid:pipeline_id>/reports/summary/",
+         PipelineReportSummaryAPIView.as_view(), name="pipeline-report-summary"),
+    path("pipelines/<uuid:pipeline_id>/reports/batches/",
+         PipelineReportBatchesAPIView.as_view(), name="pipeline-report-batches"),
+    path("pipelines/<uuid:pipeline_id>/reports/batches/<uuid:batch_id>/",
+         PipelineReportBatchDetailAPIView.as_view(), name="pipeline-report-batch-detail"),
+    path("pipelines/<uuid:pipeline_id>/reports/groups/",
+         PipelineReportGroupsAPIView.as_view(), name="pipeline-report-groups"),
+    path("pipelines/<uuid:pipeline_id>/reports/accounts/",
+         PipelineReportAccountsAPIView.as_view(), name="pipeline-report-accounts"),
     path(
         "pipelines/<uuid:pipeline_id>/scheduler-ticks/status/",
         SchedulerTickStatusAPIView.as_view(),

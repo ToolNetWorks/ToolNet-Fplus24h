@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const frontend = path.resolve(__dirname, '..');
+const shell = fs.readFileSync(path.join(frontend, 'src/features/ctv/components/CTVShell.tsx'), 'utf8');
+const component = fs.readFileSync(path.join(frontend, 'src/features/ctv/components/CTVPublishingReports.tsx'), 'utf8');
+const api = fs.readFileSync(path.join(frontend, 'src/features/ctv/api/reports.ts'), 'utf8');
+assert.match(shell, /"Lịch sử đăng bài"[^\n]*tab: "reports"/);
+assert.match(shell, /<CTVPublishingReports pipelineId=\{workspace\.pipeline\.id\} \/>/);
+assert.match(component, /reportBatchDetail\(/);
+assert.match(component, /published_verified/);
+assert.match(component, /CSV trang hiện tại/);
+assert.match(component, /window_days|Job tạo trong kỳ/);
+assert.match(api, /cache: "no-store"/);
+assert.match(api, /method: "GET"/);
+assert.doesNotMatch(api, /method: "POST"|method: "PATCH"|method: "DELETE"/);
+assert.doesNotMatch(api, /admin\/pipelines/);
+assert.match(component, /\[=\+@-\]/); // CSV formula injection guard
+console.log('REPORT CTV NAVIGATION: PASS');
+console.log('REPORT API READ-ONLY + NO STORE: PASS');
+console.log('JOB PUBLISHED_VERIFIED SEMANTICS: PASS');
+console.log('CSV FORMULA GUARD: PASS');

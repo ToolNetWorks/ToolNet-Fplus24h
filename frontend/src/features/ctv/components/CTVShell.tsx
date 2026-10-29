@@ -29,9 +29,10 @@ import CTVMediaSources from "./CTVMediaSources";
 import CTVPublishingJobs from "./CTVPublishingJobs";
 import CTVScheduler from "./CTVScheduler";
 import CTVDashboard from "./CTVDashboard";
+import CTVPublishingReports from "./CTVPublishingReports";
 import "./ctv-shell.css";
 
-type Tab = "overview" | "accounts" | "proxies" | "groups" | "albums" | "media" | "jobs" | "scheduler";
+type Tab = "overview" | "accounts" | "proxies" | "groups" | "albums" | "media" | "jobs" | "scheduler" | "reports";
 
 interface WorkspacePayload {
   pipeline: {
@@ -102,7 +103,7 @@ const navigation: {
       { label: "Đăng bài viết nhóm", icon: FileText },
       { label: "AI viết Caption", icon: Sparkles },
       { label: "Lịch đăng bài", icon: CalendarDays, tab: "jobs" },
-      { label: "Lịch sử đăng bài", icon: Layers3 },
+      { label: "Lịch sử đăng bài", icon: Layers3, tab: "reports" },
     ],
   },
   {
@@ -122,6 +123,7 @@ const titles: Record<Tab, string> = {
   media: "Cấu hình Album nguồn",
   jobs: "Lịch đăng bài & Hàng đợi",
   scheduler: "Cấu hình lịch tự động",
+  reports: "Lịch sử đăng bài & Báo cáo",
 };
 
 const STORAGE_KEY = "toolnet-ctv-sidebar-collapsed";
@@ -363,6 +365,9 @@ export default function CTVShell({
           )}
           {activeTab === "jobs" && (
             <CTVPublishingJobs pipelineId={workspace.pipeline.id} />
+          )}
+          {activeTab === "reports" && (
+            <CTVPublishingReports pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "scheduler" && (
             <CTVScheduler pipelineId={workspace.pipeline.id} onDirtyChange={setSchedulerDirty} />
