@@ -20,6 +20,7 @@ from modules.publishing.manual_handoff_models import (
 from modules.publishing.services import media_selection
 from modules.publishing.services.post_verification import SECRET_MARKER
 from modules.publishing.services.reconciliation import held_subject_ids
+from modules.publishing.services.caption_engine import ready_for_dispatch
 
 
 class HandoffError(ValueError):
@@ -104,7 +105,8 @@ def get_handoff(*, pipeline_id, job_id):
     return {
         'handoff': _payload(row) if row else None,
         'can_prepare': bool(not row and job.state == PublishingJob.State.QUEUED
-                            and job.attempt_count == 0 and job.next_run_at <= timezone.now()),
+                            and job.attempt_count == 0 and job.next_run_at <= timezone.now()
+                            and ready_for_dispatch(job)),
         'job_state': job.state,
         'facebook_groups_api_supported': False,
     }
@@ -122,6 +124,8 @@ def prepare_handoff(*, pipeline_id, job_id, actor):
         return _payload(old)
     if pipeline.status != Pipeline.Status.ACTIVE:
         raise HandoffConflict('Pipeline đang bị khóa.')
+    if not ready_for_dispatch(job):
+        raise HandoffConflict('Caption AI chưa duyệt hoặc trang đích không hợp lệ.')
     if (job.state != PublishingJob.State.QUEUED or job.attempt_count != 0
             or job.media_allocation_id or job.next_run_at > timezone.now()):
         raise HandoffConflict('Job không ở trạng thái chờ đến hạn để bàn giao thủ công.')

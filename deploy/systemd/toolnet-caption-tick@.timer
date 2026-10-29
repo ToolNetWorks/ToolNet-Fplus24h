@@ -1,0 +1,12 @@
+[Unit]
+Description=Run ToolNet Fplus24h caption tick for Pipeline %i
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=2min
+AccuracySec=30s
+Persistent=false
+Unit=toolnet-caption-tick@%i.service
+
+[Install]
+WantedBy=timers.target

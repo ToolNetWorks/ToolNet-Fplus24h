@@ -13,6 +13,7 @@ import secrets
 from datetime import datetime, timedelta
 
 from django.db import transaction
+from django.db.models import Q, F
 from django.utils import timezone
 
 from modules.facebook_accounts.models import FacebookAccount
@@ -21,6 +22,7 @@ from modules.pipelines.models import Pipeline
 from modules.publishing.models import MediaAllocation, PublishingJob, PublishingAttempt
 from modules.publishing.services import media_selection
 from modules.publishing.services.reconciliation import held_subject_ids
+from modules.publishing.services.caption_engine import ready_for_dispatch
 
 KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 WORKER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")
@@ -148,8 +150,16 @@ def claim_due_job(*, pipeline_id, worker_id, lease_seconds=600):
            .exclude(facebook_account_id__in=blocked_accounts)
            .exclude(facebook_group_id__in=blocked_groups)
            .exclude(manual_handoff__state='prepared')
+           .filter(Q(pipeline__caption_settings__isnull=True) |
+                   Q(pipeline__caption_settings__enabled=False) |
+                   Q(ai_caption__state='approved',
+                     ai_caption__settings_version=F('pipeline__caption_settings__version'),
+                     ai_caption__destination_snapshot=F('pipeline__caption_settings__destination'),
+                     caption=F('ai_caption__text')))
            .order_by("next_run_at", "scheduled_at", "id").first())
     if job is None:
+        return None
+    if not ready_for_dispatch(job):
         return None
     if job.attempt_count >= job.max_attempts:
         job.state = PublishingJob.State.FAILED

@@ -13,6 +13,8 @@ from .publishing.manual_handoff_views import ManualHandoffAPIView
 from .publishing.pilot_views import PublishingPilotReadinessAPIView
 from .publishing.performance_views import PipelinePerformanceAPIView
 from .publishing.release_views import PipelineReleaseReadinessAPIView
+from .publishing.caption_views import (CaptionSettingsAPIView, CaptionSamplesAPIView,
+    CaptionSampleDetailAPIView, CaptionJobListAPIView, CaptionJobAPIView)
 from .publishing.security_audit_views import PublishingSecurityAuditAPIView
 from .publishing.worker_reliability_views import WorkerGuardAPIView
 from .publishing.alert_views import PublishingAlertsAPIView, PublishingAlertActionAPIView, PublishingAlertEventsAPIView
@@ -69,6 +71,16 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path("pipelines/<uuid:pipeline_id>/caption-config/",
+         CaptionSettingsAPIView.as_view(), name="caption-config"),
+    path("pipelines/<uuid:pipeline_id>/caption-samples/",
+         CaptionSamplesAPIView.as_view(), name="caption-samples"),
+    path("pipelines/<uuid:pipeline_id>/caption-samples/<uuid:sample_id>/",
+         CaptionSampleDetailAPIView.as_view(), name="caption-sample-detail"),
+    path("pipelines/<uuid:pipeline_id>/caption-jobs/",
+         CaptionJobListAPIView.as_view(), name="caption-jobs"),
+    path("pipelines/<uuid:pipeline_id>/publishing-jobs/<uuid:job_id>/caption/",
+         CaptionJobAPIView.as_view(), name="job-caption"),
     path("pipelines/<uuid:pipeline_id>/release-readiness/",
          PipelineReleaseReadinessAPIView.as_view(), name="pipeline-release-readiness"),
     path("pipelines/<uuid:pipeline_id>/performance/",

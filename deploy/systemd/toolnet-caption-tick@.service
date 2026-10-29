@@ -1,0 +1,17 @@
+[Unit]
+Description=ToolNet Fplus24h caption generation tick (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/toolnet-group-publisher/backend
+EnvironmentFile=-/root/toolnet-group-publisher/backend/.env
+ExecStart=/root/toolnet-group-publisher/.venv/bin/python manage.py publishing_caption_tick --pipeline-id %i --generate --limit 5
+TimeoutStartSec=240
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

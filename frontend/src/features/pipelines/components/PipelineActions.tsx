@@ -8,6 +8,7 @@ import {
   FolderCheck,
   Images,
   KeyRound,
+  Sparkles,
   LockKeyhole,
   LockKeyholeOpen,
   Trash2,
@@ -66,7 +67,7 @@ export default function PipelineActions({
       if (!triggerRef.current) return;
       const rect = triggerRef.current.getBoundingClientRect();
       const menuWidth = 224;
-      const menuHeight = 280;
+      const menuHeight = 340;
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
       const showAbove = spaceBelow < menuHeight + 10 && spaceAbove > spaceBelow;
@@ -280,6 +281,15 @@ export default function PipelineActions({
 
             <div className="my-1 border-t border-slate-100" />
 
+            <Link
+              href={`/pipelines/${item.id}/caption-settings/`}
+              role="menuitem"
+              onClick={() => setIsOpen(false)}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+            >
+              <Sparkles size={16} className="text-blue-500 flex-shrink-0" />
+              <span>AI Caption & Trang đích</span>
+            </Link>
             {/* Xóa */}
             <button
               type="button"
