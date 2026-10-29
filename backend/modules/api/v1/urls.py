@@ -1,3 +1,4 @@
+from .publishing.scheduler_tick_views import SchedulerTickStatusAPIView
 from .publishing.scheduler_views import (
     PipelineScheduleListCreateAPIView, PipelineScheduleDetailAPIView,
     SchedulePreviewAPIView, ScheduleRunAPIView, ScheduleBatchListAPIView,
@@ -46,6 +47,11 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/scheduler-ticks/status/",
+        SchedulerTickStatusAPIView.as_view(),
+        name="scheduler-tick-status",
+    ),
     path(
         "pipelines/<uuid:pipeline_id>/schedules/",
         PipelineScheduleListCreateAPIView.as_view(), name="pipeline-schedules",

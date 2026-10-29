@@ -161,7 +161,15 @@ def plan_schedule(*, schedule_id, commit=False, now=None):
         }
     old_batch = ScheduledBatch.objects.filter(schedule_id=schedule.pk, slot_at=slot).first()
     if old_batch:
-        return _batch_payload(old_batch)
+        replay = _batch_payload(old_batch)
+        if commit:
+            # Repair a stale/rewound cursor in the same Pipeline->Schedule lock.
+            # One stored Batch per slot means no duplicate PublishingJobs.
+            interval = timedelta(minutes=schedule.interval_minutes)
+            schedule.next_run_at = max(slot + interval, now + interval)
+            schedule.save(update_fields=['next_run_at', 'updated_at'])
+        replay['next_run_at'] = schedule.next_run_at.isoformat()
+        return replay
 
     target_time = max(slot, now)
     accounts = list(FacebookAccount.objects.filter(

@@ -479,3 +479,5 @@ from .scheduler_models import (
     PipelineSchedule, AccountGroupEligibility, GroupHealth,
     AccountProxyPin, ScheduledBatch, ScheduledAssignment,
 )
+
+from .scheduler_tick_models import SchedulerTickAudit

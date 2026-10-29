@@ -1,0 +1,22 @@
+[Unit]
+Description=ToolNet Pipeline Scheduler Tick (enqueue-only; NEVER Facebook dispatch)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/toolnet-group-publisher/backend
+Environment=PYTHONUNBUFFERED=1
+Environment=TOOLNET_SCHEDULER_TICK_ENABLED=1
+ExecStart=/root/toolnet-group-publisher/.venv/bin/python manage.py scheduler_tick --enqueue --watch --poll-seconds 30 --limit 25
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
