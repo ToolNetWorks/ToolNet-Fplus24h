@@ -8,8 +8,10 @@ import hashlib
 import json
 import os
 import re
+import time
 import uuid
 from datetime import timedelta
+from urllib.error import HTTPError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -159,11 +161,13 @@ def caption_payload(row):
 
 
 def _provider(text, *, model=None):
-    url = os.environ.get('TOOLNET_CAPTION_API_URL', '').strip()
-    key = os.environ.get('TOOLNET_CAPTION_API_KEY', '').strip()
-    model = model or os.environ.get('TOOLNET_CAPTION_MODEL', '').strip()
+    url = (os.environ.get('TOOLNET_CAPTION_API_URL') or os.environ.get('AI_URL') or '').strip()
+    key = (os.environ.get('TOOLNET_CAPTION_API_KEY') or os.environ.get('AI_KEY') or '').strip()
+    model = (model or os.environ.get('TOOLNET_CAPTION_MODEL') or os.environ.get('AI_MODEL') or '').strip()
     if not url or not key or not model:
         raise CaptionError('Chưa cấu hình provider AI trên server.')
+    if not url.endswith('/chat/completions'):
+        url = url.rstrip('/') + '/chat/completions'
     target = urlparse(url)
     if target.scheme != 'https' or not target.hostname or target.username or target.password:
         raise CaptionError('Endpoint AI phải là HTTPS hợp lệ.')
@@ -182,18 +186,31 @@ def _provider(text, *, model=None):
     data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     req = Request(url, data=data, headers={'Authorization': 'Bearer ' + key,
                    'Content-Type': 'application/json', 'Accept': 'application/json'}, method='POST')
-    try:
-        with urlopen(req, timeout=25) as reply:
-            if reply.status != 200:
-                raise CaptionError('Provider AI không sẵn sàng.')
-            result = json.loads(reply.read(120000).decode('utf-8'))
-        value = result['choices'][0]['message']['content']
-        if not isinstance(value, str):
-            raise ValueError('No text')
-        return value, model
-    except Exception:
-        # Never bubble up provider URL, Authorization header, response body or key.
-        raise CaptionError('Không tạo được caption qua AI; kiểm tra cấu hình server.') from None
+    timeout_sec = int(os.environ.get('TOOLNET_CAPTION_TIMEOUT', '60') or '60')
+
+    for attempt in range(2):
+        try:
+            with urlopen(req, timeout=timeout_sec) as reply:
+                if reply.status != 200:
+                    raise CaptionError('Provider AI không sẵn sàng.')
+                raw = reply.read(120000).decode('utf-8').strip()
+                if 'data: [DONE]' in raw:
+                    raw = raw.split('data: [DONE]')[0].strip()
+                result = json.loads(raw)
+            value = result['choices'][0]['message']['content']
+            if not isinstance(value, str):
+                raise ValueError('No text')
+            return value, model
+        except HTTPError as e:
+            if attempt == 0 and e.code in (429, 503, 502, 504):
+                time.sleep(5)
+                continue
+            break
+        except Exception:
+            break
+
+    # Never bubble up provider URL, Authorization header, response body or key.
+    raise CaptionError('Không tạo được caption qua AI; kiểm tra cấu hình server.') from None
 
 
 def _inputs(*, pipeline_id, job, settings):
