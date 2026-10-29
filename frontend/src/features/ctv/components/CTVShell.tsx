@@ -34,6 +34,7 @@ import CTVManualPublishing from "./CTVManualPublishing";
 import CTVPilotTesting from "./CTVPilotTesting";
 import CTVSecurityAudit from "./CTVSecurityAudit";
 import CTVPerformanceStability from "./CTVPerformanceStability";
+import CTVReleaseReadiness from "./CTVReleaseReadiness";
 import CTVScheduler from "./CTVScheduler";
 import CTVDashboard from "./CTVDashboard";
 import CTVOperationsDashboard from "./CTVOperationsDashboard";
@@ -42,7 +43,7 @@ import CTVPublishingReports from "./CTVPublishingReports";
 import CTVReconciliation from "./CTVReconciliation";
 import "./ctv-shell.css";
 
-type Tab = "overview" | "operations" | "alerts" | "accounts" | "proxies" | "groups" | "albums" | "media" | "publishing" | "pilot" | "security" | "performance" | "jobs" | "scheduler" | "reports" | "reconciliation";
+type Tab = "overview" | "operations" | "alerts" | "accounts" | "proxies" | "groups" | "albums" | "media" | "publishing" | "pilot" | "security" | "performance" | "release" | "jobs" | "scheduler" | "reports" | "reconciliation";
 
 interface WorkspacePayload {
   pipeline: {
@@ -116,6 +117,7 @@ const navigation: {
       { label: "Kiểm thử Pilot", icon: ClipboardCheck, tab: "pilot" },
       { label: "Kiểm toán bảo mật", icon: ShieldCheck, tab: "security" },
       { label: "Hiệu năng & ổn định", icon: Activity, tab: "performance" },
+      { label: "Nghiệm thu production", icon: ClipboardCheck, tab: "release" },
       { label: "AI viết Caption", icon: Sparkles },
       { label: "Lịch đăng bài", icon: CalendarDays, tab: "jobs" },
       { label: "Lịch sử đăng bài", icon: Layers3, tab: "reports" },
@@ -143,6 +145,7 @@ const titles: Record<Tab, string> = {
   pilot: "Kiểm thử Pilot",
   security: "Kiểm toán bảo mật",
   performance: "Hiệu năng & ổn định",
+  release: "Nghiệm thu production",
   jobs: "Lịch đăng bài & Hàng đợi",
   scheduler: "Cấu hình lịch tự động",
   reports: "Lịch sử đăng bài & Báo cáo",
@@ -403,6 +406,9 @@ export default function CTVShell({
           )}
           {activeTab === "performance" && (
             <CTVPerformanceStability pipelineId={workspace.pipeline.id} />
+          )}
+          {activeTab === "release" && (
+            <CTVReleaseReadiness pipelineId={workspace.pipeline.id} />
           )}
           {activeTab === "jobs" && (
             <CTVPublishingJobs pipelineId={workspace.pipeline.id} />
