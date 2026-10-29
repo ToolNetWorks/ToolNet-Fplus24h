@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, Database, RefreshCw, ShieldCheck } from "lucide-react";
 import { getOperationsHealth, type OperationsHealth } from "../api/operations-health";
+import CTVWorkerReliability from "./CTVWorkerReliability";
 
 const formatCount = (value: number) => value.toLocaleString("vi-VN");
 const formatDate = (value: string | null | undefined) => {
@@ -187,5 +188,6 @@ export default function CTVOperationsDashboard({ pipelineId }: { pipelineId: str
       </div>
     </>}
     {!snapshot && loading && <p role="status" className="text-xs text-slate-500">Đang truy vấn trạng thái vận hành...</p>}
+    <CTVWorkerReliability pipelineId={pipelineId} />
   </section>;
 }
