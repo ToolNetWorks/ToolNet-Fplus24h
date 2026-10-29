@@ -23,6 +23,7 @@ from modules.publishing.scheduler_models import (
     AccountProxyPin, ScheduledBatch, ScheduledAssignment,
 )
 from modules.publishing.services.job_engine import enqueue_job
+from modules.publishing.services.reconciliation import held_subject_ids
 
 MIN_ACCOUNT_GAP = timedelta(minutes=15)
 MIN_GROUP_GAP = timedelta(minutes=60)
@@ -80,7 +81,10 @@ def _eligible_accounts(pipeline, accounts, now):
         for row in AccountProxyPin.objects.filter(pipeline_id=pipeline.pk)
     }
     valid = {}
+    held_account_ids, _ = held_subject_ids(pipeline_id=pipeline.pk)
     for account in accounts:
+        if account.pk in held_account_ids:
+            continue  # Never schedule a second job while prior posting is unverified.
         proxy = proxy_by_account.get(account.pk)
         if not proxy or not proxy.is_enabled or proxy.health_status != ProxyEndpoint.HealthStatus.HEALTHY:
             continue

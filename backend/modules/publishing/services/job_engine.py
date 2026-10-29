@@ -20,6 +20,7 @@ from modules.facebook_groups.models import FacebookGroup
 from modules.pipelines.models import Pipeline
 from modules.publishing.models import MediaAllocation, PublishingJob, PublishingAttempt
 from modules.publishing.services import media_selection
+from modules.publishing.services.reconciliation import held_subject_ids
 
 KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 WORKER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")
@@ -138,11 +139,14 @@ def claim_due_job(*, pipeline_id, worker_id, lease_seconds=600):
     if pipeline.status != Pipeline.Status.ACTIVE:
         return None
     now = timezone.now()
+    blocked_accounts, blocked_groups = held_subject_ids(pipeline_id=pipeline.pk)
     job = (PublishingJob.objects.select_for_update()
            .filter(pipeline_id=pipeline.pk, state=PublishingJob.State.QUEUED,
                    facebook_account__connection_status=FacebookAccount.ConnectionStatus.CONNECTED,
                    facebook_group__is_enabled=True,
                    next_run_at__lte=now, attempt_count__lt=5)
+           .exclude(facebook_account_id__in=blocked_accounts)
+           .exclude(facebook_group_id__in=blocked_groups)
            .order_by("next_run_at", "scheduled_at", "id").first())
     if job is None:
         return None

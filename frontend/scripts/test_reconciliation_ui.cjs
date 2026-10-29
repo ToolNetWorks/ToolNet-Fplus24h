@@ -1,0 +1,15 @@
+"use strict";
+const fs = require("node:fs");
+const assert = require("node:assert/strict");
+const read = (p) => fs.readFileSync(p, "utf8");
+const shell = read("src/features/ctv/components/CTVShell.tsx");
+const api = read("src/features/ctv/api/reconciliation.ts");
+const screen = read("src/features/ctv/components/CTVReconciliation.tsx");
+assert.match(shell, /tab: "reconciliation"/);
+assert.match(shell, /<CTVReconciliation pipelineId=\{workspace.pipeline.id\}/);
+assert.match(api, /method: "GET"/);
+assert.doesNotMatch(api, /method: "POST"|method: "PATCH"|method: "DELETE"/);
+assert.match(screen, /Đối soát & Cảnh báo/);
+assert.match(screen, /không được tự động thử lại/);
+assert.doesNotMatch(screen, /fetch\(.*method:\s*"POST"/);
+console.log("CTV RECONCILIATION UI READ-ONLY + SCOPED ROUTE: PASS");

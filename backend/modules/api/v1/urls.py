@@ -3,6 +3,7 @@ from .publishing.report_views import (
     PipelineReportBatchDetailAPIView, PipelineReportGroupsAPIView,
     PipelineReportAccountsAPIView,
 )
+from .publishing.reconciliation_views import PublishingReconciliationAPIView
 from .publishing.scheduler_tick_views import SchedulerTickStatusAPIView
 from .publishing.scheduler_views import (
     PipelineScheduleListCreateAPIView, PipelineScheduleDetailAPIView,
@@ -52,6 +53,10 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/publishing-reconciliation/",
+        PublishingReconciliationAPIView.as_view(), name="publishing-reconciliation",
+    ),
     # Read-only Pipeline reporting (Step 9.7.5).
     path("pipelines/<uuid:pipeline_id>/reports/summary/",
          PipelineReportSummaryAPIView.as_view(), name="pipeline-report-summary"),
