@@ -7,6 +7,7 @@ from .publishing.review_case_views import (
     ReviewCaseListCreateAPIView, ReviewCaseDetailAPIView, ReviewCaseActionAPIView,
 )
 from .publishing.review_sla_views import ReviewSLAAPIView
+from .publishing.integrity_audit_views import PublishingIntegrityAuditAPIView
 from .publishing.reconciliation_views import PublishingReconciliationAPIView
 from .publishing.readback_views import PublishingJobReadbackAPIView
 from .publishing.post_verification_views import PublishingJobVerificationAPIView
@@ -59,6 +60,10 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/integrity-audit/",
+        PublishingIntegrityAuditAPIView.as_view(), name="pipeline-integrity-audit",
+    ),
     path(
         "pipelines/<uuid:pipeline_id>/publishing-jobs/<uuid:job_id>/readback/",
         PublishingJobReadbackAPIView.as_view(), name="publishing-job-readback",

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, ChevronLeft, ChevronRight, RefreshCw, ShieldAlert } from "lucide-react";
 import { getPublishingReconciliation, type ReconciliationData } from "../api/reconciliation";
 import CTVReviewCases from "./CTVReviewCases";
+import CTVIntegrityAudit from "./CTVIntegrityAudit";
 
 const dateTime = (value: string | null) => value ? new Date(value).toLocaleString("vi-VN") : "—";
 const errorText = (value: unknown) => value instanceof Error ? value.message : "Không tải được cảnh báo.";
@@ -135,6 +136,7 @@ export default function CTVReconciliation({ pipelineId }: { pipelineId: string }
         {data?.group_alerts_truncated && <p className="mt-2 text-xs text-amber-800">Danh sách giới hạn 500 Group.</p>}
       </div>
     </div>
+    <CTVIntegrityAudit pipelineId={pipelineId} />
     <CTVReviewCases pipelineId={pipelineId} flaggedJobs={data?.jobs ?? []} />
   </section>;
 }
