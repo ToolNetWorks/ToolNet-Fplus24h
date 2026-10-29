@@ -28,6 +28,7 @@ import CTVAlbumsTable from "./CTVAlbumsTable";
 import CTVMediaSources from "./CTVMediaSources";
 import CTVPublishingJobs from "./CTVPublishingJobs";
 import CTVScheduler from "./CTVScheduler";
+import CTVDashboard from "./CTVDashboard";
 import "./ctv-shell.css";
 
 type Tab = "overview" | "accounts" | "proxies" | "groups" | "albums" | "media" | "jobs" | "scheduler";
@@ -130,7 +131,7 @@ export default function CTVShell({
 }: {
   workspace: WorkspacePayload;
 }) {
-  const [activeTab, setActiveTab] = useState<Tab>("accounts");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [mediaDirty, setMediaDirty] = useState(false);
   const [schedulerDirty, setSchedulerDirty] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -346,36 +347,7 @@ export default function CTVShell({
         </header>
         <main id="ctv-main-content" className="ctv-content">
           {activeTab === "overview" && (
-            <div className="space-y-5">
-              <div>
-                <h1 className="text-xl font-bold text-slate-900">
-                  Tổng quan Pipeline
-                </h1>
-                <p className="mt-1 text-sm text-slate-500">
-                  {workspace.pipeline.name}
-                </p>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-lg border border-slate-200 bg-white p-5">
-                  <Users size={21} className="text-blue-600" />
-                  <p className="mt-4 text-sm text-slate-500">
-                    Tổng tài khoản Facebook
-                  </p>
-                  <p className="mt-2 text-3xl font-bold">
-                    {workspace.stats.facebook_accounts}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-white p-5">
-                  <ShieldCheck size={21} className="text-green-600" />
-                  <p className="mt-4 text-sm text-slate-500">
-                    Tài khoản có trạng thái kết nối
-                  </p>
-                  <p className="mt-2 text-3xl font-bold">
-                    {workspace.stats.connected_accounts}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <CTVDashboard pipelineId={workspace.pipeline.id} pipelineName={workspace.pipeline.name} onNavigate={selectTab} />
           )}
           {activeTab === "accounts" && (
             <CTVAccountsTable pipelineId={workspace.pipeline.id} />
