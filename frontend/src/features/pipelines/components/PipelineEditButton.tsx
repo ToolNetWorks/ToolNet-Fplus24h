@@ -17,6 +17,7 @@ import type { PipelineListItem } from "../types/list";
 interface Props {
   item: PipelineListItem;
   onChanged: () => void;
+  triggerClassName?: string;
 }
 const inputClass =
   "w-full rounded-lg border border-slate-200 " +
@@ -28,6 +29,7 @@ const labelClass =
 export default function PipelineEditButton({
   item,
   onChanged,
+  triggerClassName,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
@@ -111,24 +113,25 @@ export default function PipelineEditButton({
   }
   return (
     <>
-      <div className="space-y-2">
-        <button
-          type="button"
-          onClick={openDialog}
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+      <button
+        type="button"
+        onClick={openDialog}
+        className={
+          triggerClassName ||
+          "inline-flex min-h-10 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+        }
+      >
+        <Pencil size={15} />
+        <span>Chỉnh sửa</span>
+      </button>
+      {success && !triggerClassName && (
+        <p
+          role="status"
+          className="text-xs text-green-700"
         >
-          <Pencil size={16} />
-          Chỉnh sửa
-        </button>
-        {success && (
-          <p
-            role="status"
-            className="text-xs text-green-700"
-          >
-            {success}
-          </p>
-        )}
-      </div>
+          {success}
+        </p>
+      )}
       <dialog
         ref={dialogRef}
         onCancel={handleCancel}

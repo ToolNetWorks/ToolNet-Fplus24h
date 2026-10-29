@@ -76,7 +76,7 @@ export default function Sidebar({
 
           <div className="brand-title">
             <strong>TOOLNET</strong>
-            <span>PUBLISHER</span>
+            <span>FPLUS24H</span>
           </div>
 
           <button

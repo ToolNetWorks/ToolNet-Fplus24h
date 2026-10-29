@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import FacebookAccountsPanel from "@/features/facebook-accounts/components/FacebookAccountsPanel";
 export const metadata: Metadata = {
-  title: "Facebook Accounts | ToolNet Publisher",
+  title: "Facebook Accounts | ToolNet Fplus24h",
   robots: {
     index: false,
     follow: false,

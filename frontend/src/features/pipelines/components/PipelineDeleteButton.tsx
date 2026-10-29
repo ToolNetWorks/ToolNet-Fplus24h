@@ -1,8 +1,10 @@
 "use client";
 import {
+  useEffect,
   useRef,
   useState,
   type FormEvent,
+  type MutableRefObject,
   type SyntheticEvent,
 } from "react";
 import {
@@ -17,13 +19,23 @@ import {
   type PipelineDeletePreview,
 } from "../api/delete-pipeline";
 import type { PipelineListItem } from "../types/list";
+
+export interface PipelineDeleteActionHandle {
+  open: () => void;
+}
+
 interface Props {
   item: PipelineListItem;
   onDeleted: () => void;
+  actionRef?: MutableRefObject<PipelineDeleteActionHandle | null>;
+  hideTrigger?: boolean;
 }
+
 export default function PipelineDeleteButton({
   item,
   onDeleted,
+  actionRef,
+  hideTrigger = false,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [preview, setPreview] =
@@ -33,6 +45,7 @@ export default function PipelineDeleteButton({
   const [confirmName, setConfirmName] = useState("");
   const [confirmUsername, setConfirmUsername] = useState("");
   const [error, setError] = useState("");
+
   const canConfirm =
     preview?.can_delete === true &&
     preview.blockers.length === 0 &&
@@ -40,6 +53,7 @@ export default function PipelineDeleteButton({
     confirmUsername === preview.ctv_username &&
     !checking &&
     !deleting;
+
   async function openDialog() {
     if (checking || deleting) return;
     setPreview(null);
@@ -63,6 +77,13 @@ export default function PipelineDeleteButton({
       setChecking(false);
     }
   }
+
+  useEffect(() => {
+    if (actionRef) {
+      actionRef.current = { open: openDialog };
+    }
+  });
+
   function closeDialog() {
     if (deleting) return;
     dialogRef.current?.close();
@@ -71,12 +92,14 @@ export default function PipelineDeleteButton({
     setConfirmUsername("");
     setError("");
   }
+
   function handleCancel(
     event: SyntheticEvent<HTMLDialogElement>,
   ) {
     if (!deleting) return;
     event.preventDefault();
   }
+
   async function handleDelete(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -102,22 +125,26 @@ export default function PipelineDeleteButton({
       setDeleting(false);
     }
   }
+
   function closeAfterSuccess() {
     dialogRef.current?.close();
     setPreview(null);
     setConfirmName("");
     setConfirmUsername("");
   }
+
   return (
     <>
-      <button
-        type="button"
-        onClick={openDialog}
-        className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
-      >
-        <Trash2 size={16} />
-        Xóa
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={openDialog}
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+        >
+          <Trash2 size={16} />
+          Xóa
+        </button>
+      )}
       <dialog
         ref={dialogRef}
         onCancel={handleCancel}

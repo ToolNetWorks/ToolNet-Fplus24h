@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import CreatePipelineForm from "@/features/pipelines/components/CreatePipelineForm";
 
 export const metadata: Metadata = {
-  title: "Quản lý Pipeline | ToolNet Publisher",
+  title: "Quản lý Pipeline | ToolNet Fplus24h",
   robots: {
     index: false,
     follow: false,

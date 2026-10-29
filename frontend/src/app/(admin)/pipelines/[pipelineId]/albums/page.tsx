@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import AlbumLibrary from "@/features/albums/components/AlbumLibrary";
 export const metadata: Metadata = {
-  title: "Album Library | ToolNet Publisher",
+  title: "Album Library | ToolNet Fplus24h",
   robots: {
     index: false,
     follow: false,

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { MutableRefObject } from "react";
 import {
   LockKeyhole,
   LockKeyholeOpen,
@@ -10,14 +11,22 @@ import {
 import { updatePipelineStatus } from "../api/update-pipeline-status";
 import type { PipelineListItem } from "../types/list";
 
+export interface PipelineStatusActionHandle {
+  toggle: () => Promise<void>;
+}
+
 interface Props {
   item: PipelineListItem;
   onChanged: () => void;
+  actionRef?: MutableRefObject<PipelineStatusActionHandle | null>;
+  hideTrigger?: boolean;
 }
 
 export default function PipelineStatusButton({
   item,
   onChanged,
+  actionRef,
+  hideTrigger = false,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -43,14 +52,27 @@ export default function PipelineStatusButton({
       await updatePipelineStatus(item.id, newStatus);
       onChanged();
     } catch (cause) {
-      setError(
+      const msg =
         cause instanceof Error
           ? cause.message
-          : "Cập nhật trạng thái thất bại.",
-      );
+          : "Cập nhật trạng thái thất bại.";
+      setError(msg);
+      if (hideTrigger) {
+        window.alert(msg);
+      }
     } finally {
       setLoading(false);
     }
+  }
+
+  useEffect(() => {
+    if (actionRef) {
+      actionRef.current = { toggle: handleClick };
+    }
+  });
+
+  if (hideTrigger) {
+    return null;
   }
 
   return (

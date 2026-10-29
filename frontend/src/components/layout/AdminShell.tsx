@@ -93,7 +93,7 @@ export default function AdminShell({
           </button>
 
           <div className="topbar-brand">
-            ToolNet Publisher
+            ToolNet Fplus24h
           </div>
 
           <div className="topbar-right">

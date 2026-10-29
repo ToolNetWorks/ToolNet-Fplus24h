@@ -14,10 +14,7 @@ import {
 } from "lucide-react";
 
 import { listPipelines } from "../api/list-pipelines";
-import PipelineStatusButton from "./PipelineStatusButton";
-import CTVPasswordButton from "./CTVPasswordButton";
-import PipelineEditButton from "./PipelineEditButton";
-import PipelineDeleteButton from "./PipelineDeleteButton";
+import PipelineActions from "./PipelineActions";
 import type {
   PipelineListResponse,
   PipelineStatusFilter,
@@ -80,6 +77,7 @@ export default function PipelineList() {
   useEffect(() => {
     const controller = new AbortController();
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError("");
 
@@ -225,20 +223,20 @@ export default function PipelineList() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-xs text-slate-500">
                   <tr>
-                    <th className="px-5 py-4">Pipeline</th>
-                    <th className="px-5 py-4">CTV</th>
-                    <th className="px-5 py-4">Trạng thái</th>
-                    <th className="px-5 py-4">Ngày tạo</th>
-                    <th className="px-5 py-4">Thao tác</th>
+                    <th className="px-5 py-3.5 font-semibold">Pipeline</th>
+                    <th className="px-5 py-3.5 font-semibold">CTV</th>
+                    <th className="px-5 py-3.5 font-semibold">Trạng thái</th>
+                    <th className="px-5 py-3.5 font-semibold">Ngày tạo</th>
+                    <th className="px-5 py-3.5 text-right font-semibold">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {items.map((item) => (
-                    <tr key={item.id}>
-                      <td className="px-5 py-4 font-semibold text-slate-800">
+                    <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-5 py-3.5 font-semibold text-slate-800">
                         {item.name}
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-5 py-3.5">
                         <p className="font-medium text-slate-700">
                           {item.ctv.username}
                         </p>
@@ -246,50 +244,24 @@ export default function PipelineList() {
                           {item.ctv.email}
                         </p>
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-5 py-3.5">
                         <StatusBadge status={item.status} />
                       </td>
-                      <td className="px-5 py-4 text-slate-500">
+                      <td className="px-5 py-3.5 text-slate-500 whitespace-nowrap">
                         {formatDate(item.created_at)}
                       </td>
-                      <td className="px-5 py-4">
-                        <PipelineStatusButton
-                          item={item}
-                          onChanged={() =>
-                            setRefreshKey((value) => value + 1)
-                          }
-                        />
-                        <CTVPasswordButton item={item} />
-                        <PipelineEditButton
-                          item={item}
-                          onChanged={() =>
-                            setRefreshKey((value) => value + 1)
-                          }
-                        />
-                        <PipelineDeleteButton
-                          item={item}
-                          onDeleted={() =>
-                            setRefreshKey((value) => value + 1)
-                          }
-                        />
-                        <Link
-                          href={`/pipelines/${item.id}/facebook-accounts/`}
-                          className="inline-flex min-h-10 items-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-                        >
-                          Facebook Accounts
-                        </Link>
-                        <Link
-                          href={`/pipelines/${item.id}/facebook-groups/`}
-                          className="inline-flex min-h-10 items-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                        >
-                          Facebook Groups
-                        </Link>
-                        <Link
-                          href={`/pipelines/${item.id}/albums/`}
-                          className="inline-flex min-h-10 items-center rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-100"
-                        >
-                          Album Library
-                        </Link>
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end">
+                          <PipelineActions
+                            item={item}
+                            onChanged={() =>
+                              setRefreshKey((value) => value + 1)
+                            }
+                            onDeleted={() =>
+                              setRefreshKey((value) => value + 1)
+                            }
+                          />
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -299,63 +271,40 @@ export default function PipelineList() {
 
             <div className="divide-y divide-slate-100 md:hidden">
               {items.map((item) => (
-                <article key={item.id} className="space-y-3 p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="font-semibold text-slate-900">
-                      {item.name}
-                    </h3>
+                <article key={item.id} className="p-4 sm:p-5 space-y-3 bg-white hover:bg-slate-50/40 transition">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-base text-slate-900 break-words">
+                        {item.name}
+                      </h3>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        Ngày tạo: {formatDate(item.created_at)}
+                      </p>
+                    </div>
                     <StatusBadge status={item.status} />
                   </div>
 
-                  <div className="text-sm text-slate-600">
-                    <p>CTV: {item.ctv.username}</p>
-                    <p className="break-all text-slate-400">
+                  <div className="rounded-lg bg-slate-50 p-2.5 text-xs text-slate-600">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-slate-500">CTV:</span>
+                      <span className="font-semibold text-slate-800">{item.ctv.username}</span>
+                    </div>
+                    <div className="mt-1 truncate text-slate-400">
                       {item.ctv.email}
-                    </p>
+                    </div>
                   </div>
 
-                  <p className="text-xs text-slate-400">
-                    Ngày tạo: {formatDate(item.created_at)}
-                  </p>
-
-                  <div className="pt-1">
-                    <PipelineStatusButton
+                  <div className="pt-2 border-t border-slate-100/80">
+                    <PipelineActions
                       item={item}
+                      isMobile
                       onChanged={() =>
                         setRefreshKey((value) => value + 1)
                       }
-                    />
-                    <CTVPasswordButton item={item} />
-                    <PipelineEditButton
-                      item={item}
-                      onChanged={() =>
-                        setRefreshKey((value) => value + 1)
-                      }
-                    />
-                    <PipelineDeleteButton
-                      item={item}
                       onDeleted={() =>
                         setRefreshKey((value) => value + 1)
                       }
                     />
-                    <Link
-                      href={`/pipelines/${item.id}/facebook-accounts/`}
-                      className="inline-flex min-h-10 items-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-                    >
-                      Facebook Accounts
-                    </Link>
-                    <Link
-                      href={`/pipelines/${item.id}/facebook-groups/`}
-                      className="inline-flex min-h-10 items-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Facebook Groups
-                    </Link>
-                    <Link
-                      href={`/pipelines/${item.id}/albums/`}
-                      className="inline-flex min-h-10 items-center rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-100"
-                    >
-                      Album Library
-                    </Link>
                   </div>
                 </article>
               ))}
