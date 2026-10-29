@@ -53,12 +53,14 @@ class FacebookCookieUploadAPIView(APIView):
                 {"detail": "Tài khoản đã bị khóa."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if not user.is_superuser:
-            if user.is_staff or pipeline.ctv_id != user.pk:
-                return Response(
-                    {"detail": "Pipeline không tồn tại."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
+        is_admin = user.is_superuser and user.is_staff
+        is_owner = (not user.is_staff and not user.is_superuser
+                    and pipeline.ctv_id == user.pk)
+        if not (is_admin or is_owner):
+            return Response(
+                {"detail": "Pipeline không tồn tại."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         if pipeline.status != "active":
             return Response(
                 {
@@ -133,7 +135,7 @@ class FacebookCookieUploadAPIView(APIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        return Response(
+        response = Response(
             {
                 "success": True,
                 "message": (
@@ -153,3 +155,5 @@ class FacebookCookieUploadAPIView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+        response["Cache-Control"] = "private, no-store"
+        return response
