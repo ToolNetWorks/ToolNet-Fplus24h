@@ -184,11 +184,11 @@ def _provider(text, *, model=None):
         ],
     }
     data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-    req = Request(url, data=data, headers={'Authorization': 'Bearer ' + key,
-                   'Content-Type': 'application/json', 'Accept': 'application/json'}, method='POST')
-    timeout_sec = int(os.environ.get('TOOLNET_CAPTION_TIMEOUT', '60') or '60')
+    timeout_sec = int(os.environ.get('TOOLNET_CAPTION_TIMEOUT', '120') or '120')
 
-    for attempt in range(2):
+    for attempt in range(3):
+        req = Request(url, data=data, headers={'Authorization': 'Bearer ' + key,
+                       'Content-Type': 'application/json', 'Accept': 'application/json'}, method='POST')
         try:
             with urlopen(req, timeout=timeout_sec) as reply:
                 if reply.status != 200:
@@ -202,8 +202,16 @@ def _provider(text, *, model=None):
                 raise ValueError('No text')
             return value, model
         except HTTPError as e:
-            if attempt == 0 and e.code in (429, 503, 502, 504):
-                time.sleep(5)
+            if attempt < 2 and e.code in (429, 503, 502, 504):
+                body = e.read().decode('utf-8', 'ignore')
+                m = re.search(r'reset after (\d+)s', body)
+                wait_sec = (int(m.group(1)) + 1) if m else 6
+                time.sleep(wait_sec)
+                continue
+            break
+        except (TimeoutError, OSError):
+            if attempt < 2:
+                time.sleep(4)
                 continue
             break
         except Exception:
