@@ -6,6 +6,7 @@ from .publishing.report_views import (
 from .publishing.review_case_views import (
     ReviewCaseListCreateAPIView, ReviewCaseDetailAPIView, ReviewCaseActionAPIView,
 )
+from .publishing.review_sla_views import ReviewSLAAPIView
 from .publishing.reconciliation_views import PublishingReconciliationAPIView
 from .publishing.scheduler_tick_views import SchedulerTickStatusAPIView
 from .publishing.scheduler_views import (
@@ -56,6 +57,10 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path(
+        "pipelines/<uuid:pipeline_id>/review-sla/",
+        ReviewSLAAPIView.as_view(), name="pipeline-review-sla",
+    ),
     path(
         "pipelines/<uuid:pipeline_id>/review-cases/",
         ReviewCaseListCreateAPIView.as_view(), name="review-cases",

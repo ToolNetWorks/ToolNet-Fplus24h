@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, FilePlus2, RefreshCw, X } from "lucide-react";
 import type { ReviewJob } from "../api/reconciliation";
+import CTVReviewSLA from "./CTVReviewSLA";
 import {
   createReviewCase, getReviewCase, listReviewCases, reviewCaseAction,
   type ReviewAction, type ReviewCase, type ReviewList, type ReviewStatus,
@@ -98,6 +99,7 @@ export default function CTVReviewCases({ pipelineId, flaggedJobs }: {
       </div>
       <button type="button" disabled={loading} onClick={reload} className={button}><RefreshCw size={14} className="inline" /> Làm mới</button>
     </div>
+    <CTVReviewSLA pipelineId={pipelineId} onOpenCase={(caseId) => { void openDetail(caseId); }} />
     {notice && <p role="status" className="rounded-lg bg-blue-50 p-3 text-xs text-blue-800">{notice}</p>}
     {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-xs text-red-700">{error}</p>}
     <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => void create(e)}>
