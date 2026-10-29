@@ -7,6 +7,8 @@ import {
   type ObservationSource, type ObservationOutcome, type NewObservation,
 } from "../api/post-verification";
 
+import CTVReadbackStatus from "./CTVReadbackStatus";
+
 const outcomes: { value: ObservationOutcome; label: string }[] = [
   { value: "submitted", label: "Facebook đã nhận thao tác gửi (chưa xác minh hiển thị)" },
   { value: "pending_moderation", label: "Đang chờ quản trị viên Group duyệt" },
@@ -81,6 +83,7 @@ export default function CTVPostVerification({ pipelineId, jobId }: {
       <p>Quan sát gần nhất: <b>{data?.most_recent_observation ? label(data.most_recent_observation) : "Chưa có"}</b></p>
       <p>Bộ xác minh độc lập: <b>{data?.facebook_readback_configured ? "Đã cấu hình adapter" : "Chưa cấu hình"}</b></p>
     </div>
+    <CTVReadbackStatus pipelineId={pipelineId} jobId={jobId} />
     <form onSubmit={(event) => void submit(event)} className="space-y-2 border-t border-slate-100 pt-3">
       <p className="text-xs font-semibold">Ghi nhận quan sát (không đổi trạng thái Job)</p>
       <div className="grid gap-2 sm:grid-cols-2">
