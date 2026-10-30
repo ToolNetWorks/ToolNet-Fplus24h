@@ -31,13 +31,12 @@ export default function CTVAlbumImages({
   const [filePreviews, setFilePreviews] = useState<Array<{file: File, preview: string, size: string, error?: string}>>([]);
   const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
   const [busy, setBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const dragId = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragId = useRef<string | null>(null);
 
   const refresh = () => setVersion((v) => v + 1);
 
-  useEffect(() => {
+   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError("");
@@ -58,98 +57,82 @@ export default function CTVAlbumImages({
   }, [pipelineId, album.id, page, version]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    listAlbumImages(pipelineId, album.id, page, controller.signal)
-      .then((value) => {
-        if (controller.signal.aborted) return;
-        setResult(value);
-      })
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted) return;
-        setResult(null);
-        setError(message(cause));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [pipelineId, album.id, page, version]);
-
-  // Generate preview URLs for files
-  useEffect(() => {
-    if (files.length > 0) {
-      const previews: Array<{file: File, preview: string, size: string, error?: string}> = [];
-      let completed = 0;
-      
-      files.forEach((file, index) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          completed++;
-          previews.push({
-            file,
-            preview: e.target?.result as string,
-            size: (file.size / 1024 / 1024).toFixed(2) + " MB"
-          });
-          setFilePreviews([...previews]);
-          
-          if (completed === files.length) {
-            setFiles(files); // Ensure files state is updated
-          }
-        };
-        reader.onerror = () => {
-          completed++;
-          previews.push({
-            file,
-            preview: "",
-            size: (file.size / 1024 / 1024).toFixed(2) + " MB",
-            error: "Không thể đọc file"
-          });
-          setFilePreviews([...previews]);
-          
-          if (completed === files.length) {
-            setFiles(files);
-          }
-        };
-        reader.readAsDataURL(file);
-      });
+    const currentFiles = files;
+    if (currentFiles.length === 0) {
+      setFilePreviews([]);
+      return;
     }
+    let cancelled = false;
+    const previews: Array<{file: File, preview: string, size: string, error?: string}> = [];
+    let completed = 0;
+    const total = currentFiles.length;
+
+    const checkDone = () => {
+      completed++;
+      if (completed === total && !cancelled) {
+        setFilePreviews(previews);
+      }
+    };
+
+    currentFiles.forEach((file, index) => {
+      const reader = new FileReader();
+      const size = (file.size / 1024 / 1024).toFixed(2) + " MB";
+      reader.onload = (e) => {
+        previews[index] = {
+          file,
+          preview: e.target?.result as string,
+          size,
+        };
+        checkDone();
+      };
+      reader.onerror = () => {
+        previews[index] = {
+          file,
+          preview: "",
+          size,
+          error: "Không thể đọc file",
+        };
+        checkDone();
+      };
+      reader.readAsDataURL(file);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [files]);
 
-  async function upload(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (busy || !album.is_enabled || files.length < 1 || files.length > 5) return;
-    
-    // Clear previous previews and errors
-    setError(""); 
-    setNotice("");
-    
-    setBusy(true);
-    const uploadIds = files.map((_, i) => `upload-${Date.now()}-${i}`);
-    const initialProgress = Object.fromEntries(uploadIds.map(id => [id, 0]));
-    setUploadProgress(initialProgress);
-    
-    try {
-      const uploaded = await uploadAlbumImages(pipelineId, album.id, files, (progress: number, uploadId?: string) => {
-        setUploadProgress(prev => ({
-          ...prev,
-          [uploadId!]: progress
-        }));
-      });
-      
-      setNotice(`Đã upload ${uploaded.length} ảnh lên R2.`);
-      setFiles([]);
-      setFilePreviews([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      onChanged();
-      const total = (result?.pagination.total ?? 0) + uploaded.length;
-      const finalPage = Math.max(1, Math.ceil(total / 20));
-      if (page !== finalPage) setPage(finalPage);
-      else refresh();
-    } catch (cause) { setError(message(cause)); }
-    finally { setBusy(false); setUploadProgress({}); }
-  }
+   async function upload(event: FormEvent<HTMLFormElement>) {
+     event.preventDefault();
+     if (busy || !album.is_enabled || files.length < 1 || files.length > 5) return;
+     
+     setError(""); 
+     setNotice("");
+     
+     setBusy(true);
+     const uploadId = `upload-${Date.now()}`;
+     setUploadProgress({ [uploadId]: 0 });
+     
+     try {
+       const uploaded = await uploadAlbumImages(pipelineId, album.id, files, (progress: number) => {
+         setUploadProgress(prev => ({
+           ...prev,
+           [uploadId]: progress,
+         }));
+       });
+       
+       setNotice(`Đã upload ${uploaded.length} ảnh lên R2.`);
+       setFiles([]);
+       setFilePreviews([]);
+       if (fileInputRef.current) fileInputRef.current.value = "";
+       onChanged();
+       const total = (result?.pagination.total ?? 0) + uploaded.length;
+       const finalPage = Math.max(1, Math.ceil(total / 20));
+       if (page !== finalPage) setPage(finalPage);
+       else refresh();
+     } catch (cause) { setError(message(cause)); }
+     finally { setBusy(false); setUploadProgress({}); }
+   }
 
   // Enhanced file removal with cleanup
   const removeFile = (index: number) => {
@@ -313,38 +296,40 @@ export default function CTVAlbumImages({
         )
         }
         
-        {/* Upload Progress */}
-        {Object.keys(uploadProgress).length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-xs font-medium text-slate-700">Đang upload:</h4>
-            {Object.entries(uploadProgress).map(([id, progress]) => (
-              <div key={id} className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-600">Đang xử lý...</span>
-                  <span className="text-slate-500">{progress}%</span>
-                </div>
-                <div className="w-full bg-slate-200 rounded-full h-1.5">
-                  <div 
-                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-                    style={{ width: `${progress}%` }}
-                  ></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-        }
-        
-        {!album.is_enabled && <p className="text-xs text-amber-700">Album đang tắt. Hãy bật Album trước khi upload.</p>}
-        
-        {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={busy || !album.is_enabled || files.length < 1 || files.length > 5}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-blue-700 transition-colors"
-        >
-          <Upload size={16} /> {busy ? "Đang xử lý..." : `Upload ảnh (${files.length})`}
-        </button>
+         {/* Upload Progress */}
+         {Object.keys(uploadProgress).length > 0 && (
+           <div className="space-y-2">
+             <h4 className="text-xs font-medium text-slate-700">Đang upload:</h4>
+             {Object.entries(uploadProgress).map(([id, progress]) => (
+               <div key={id} className="space-y-1">
+                 <div className="flex justify-between text-xs">
+                   <span className="text-slate-600">Đang tải lên...</span>
+                   <span className="text-slate-500">{progress}%</span>
+                 </div>
+                 <div className="w-full bg-slate-200 rounded-full h-1.5">
+                   <div 
+                     className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                     style={{ width: `${progress}%` }}
+                   ></div>
+                 </div>
+               </div>
+             ))}
+           </div>
+         )
+         }
+         
+         {!album.is_enabled && <p className="text-xs text-amber-700">Album đang tắt. Hãy bật Album trước khi upload.</p>}
+         
+         {/* Upload Form with Submit Button */}
+         <form onSubmit={upload} className="space-y-2">
+         <button
+           type="submit"
+           disabled={busy || !album.is_enabled || files.length < 1 || files.length > 5}
+           className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-blue-700 transition-colors"
+         >
+           <Upload size={16} /> {busy ? "Đang xử lý..." : `Upload ảnh (${files.length})`}
+         </button>
+         </form>
       </div>
       
       <div className="flex items-center justify-between gap-3">

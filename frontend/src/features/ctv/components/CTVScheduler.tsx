@@ -346,11 +346,11 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
   async function storeEligibility(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (working || !accountId || !groupId) return;
-    if (eligState === "verified" && (!proof.trim() || !canAnon || !canNonmember)) {
-      setError("Muốn dùng cho lịch ẩn danh/không tham gia, phải kiểm tra thực tế cả hai quyền và ghi bằng chứng."); return;
+    if (eligState === "verified" && (!proof.trim() || !canAnon)) {
+      setError("Muốn dùng cho lịch ẩn danh, phải kiểm tra thực tế quyền đăng ẩn danh và ghi bằng chứng."); return;
     }
     if (eligState === "verified" && !window.confirm(
-      "Xác nhận bạn đã tự kiểm tra quyền đăng ẩn danh và quyền đăng khi chưa tham gia Group bằng tài khoản này?",
+      "Xác nhận bạn đã tự kiểm tra quyền đăng ẩn danh với tài khoản này trên Group này?",
     )) return;
     setWorking(true); setError(""); setNotice("");
     try {

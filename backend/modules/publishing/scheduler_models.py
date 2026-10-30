@@ -44,14 +44,10 @@ class PipelineSchedule(models.Model):
         self.name = (self.name or '').strip()
         if not self.name:
             raise ValidationError({'name': 'Tên lịch đăng không được trống.'})
-        
-        # If pipeline has AI Caption enabled with auto_approve, make caption_template optional
+
         if not self.caption_template.strip() and not self._has_ai_caption_enabled():
             raise ValidationError({'caption_template': 'Cần caption/mẫu caption đã duyệt.'})
-        
-        if not isinstance(self.caption_template, str) or not self.caption_template.strip():
-            raise ValidationError({'caption_template': 'Cần caption/mẫu caption có nội dung.'})
-        
+
         try:
             ZoneInfo(self.timezone_name)
         except (ZoneInfoNotFoundError, ValueError, TypeError):
@@ -63,11 +59,14 @@ class PipelineSchedule(models.Model):
             raise ValidationError({'next_run_at': 'Cần datetime có múi giờ.'})
 
     def _has_ai_caption_enabled(self) -> bool:
-        """Check if pipeline has AI Caption enabled with auto_approve."""
+        """Check if pipeline has AI Caption enabled with auto_generate and auto_approve."""
+        settings = getattr(self.pipeline, 'caption_settings', None)
+        if settings is None:
+            return False
         return (
-            getattr(self.pipeline, 'caption_settings', None) is not None and
-            getattr(self.pipeline.caption_settings, 'auto_generate', False) and
-            getattr(self.pipeline.caption_settings, 'auto_approve', False)
+            getattr(settings, 'enabled', False) and
+            getattr(settings, 'auto_generate', False) and
+            getattr(settings, 'auto_approve', False)
         )
 
     def save(self, *args, **kwargs):

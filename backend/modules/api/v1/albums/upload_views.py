@@ -1,4 +1,5 @@
 import logging
+import uuid
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError
 from django.http import Http404
@@ -18,6 +19,7 @@ from modules.albums.services.r2_storage import (
     R2StorageError,
 )
 from .views import resolve_pipeline
+
 logger = logging.getLogger(__name__)
 class AlbumImageUploadAPIView(APIView):
     authentication_classes = [SessionAuthentication]
@@ -84,17 +86,20 @@ class AlbumImageUploadAPIView(APIView):
                 "success": False,
                 "message": "Không thể lưu ảnh. Vui lòng thử lại.",
             }, status=502)
-        except Exception as exc:
+        except Exception:
+            request_id = uuid.uuid4().hex
             logger.exception(
                 "Unexpected album upload error",
                 extra={
+                    "request_id": request_id,
                     "pipeline_id": str(pipeline.pk),
                     "album_id": str(album_id),
                 },
             )
             return Response({
                 "success": False,
-                "message": f"Lỗi không xác định: {str(exc)}",
+                "message": "Lỗi không xác định. Vui lòng thử lại.",
+                "request_id": request_id,
             }, status=500)
         response = Response({
             "success": True,

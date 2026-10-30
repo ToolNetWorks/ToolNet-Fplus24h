@@ -178,26 +178,55 @@ export async function uploadAlbumImages(
     form.append("files", file);
   }
   const csrfToken = await getCsrfToken();
-  
-  // For progress tracking, we need to use a different approach since FormData doesn't support progress events
-  // We'll handle this client-side with polling or we can pass a custom upload function
-  const response = await fetch(
-    imagesUrl(pipelineId, albumId),
-    {
-      method: "POST",
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: {
-        "X-CSRFToken": csrfToken,
-      },
-      body: form,
-    },
-  );
-  const result = await parse<{ data: AlbumImage[] }>(response);
-  if (!Array.isArray(result.data)) {
-    throw new Error("Kết quả upload không hợp lệ.");
-  }
-  return result.data;
+
+  return new Promise<AlbumImage[]>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", imagesUrl(pipelineId, albumId));
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("X-CSRFToken", csrfToken);
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== XMLHttpRequest.DONE) return;
+      const status = xhr.status;
+      if (status >= 200 && status < 300) {
+        let raw: unknown;
+        try {
+          raw = JSON.parse(xhr.responseText);
+        } catch {
+          reject(new Error("Phản hồi không hợp lệ."));
+          return;
+        }
+        const data = raw as Record<string, unknown>;
+        if (data.success !== true || !Array.isArray((data as { data?: unknown }).data)) {
+          reject(new Error("Kết quả upload không hợp lệ."));
+          return;
+        }
+        if (onProgress) onProgress(100);
+        resolve((data as { data: AlbumImage[] }).data);
+      } else {
+        let raw: unknown;
+        try {
+          raw = JSON.parse(xhr.responseText);
+        } catch {
+          raw = null;
+        }
+        const errMsg = raw && typeof raw === "object"
+          ? errorMessage(raw as Record<string, unknown>)
+          : `Yêu cầu thất bại (HTTP ${status}).`;
+        reject(new Error(errMsg));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Lỗi kết nối mạng."));
+    xhr.onabort = () => reject(new Error("Upload đã bị hủy."));
+    xhr.send(form);
+  });
 }
 
 export async function deleteAlbumImage(
