@@ -236,7 +236,8 @@ export default function CTVAlbumImages({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/*"
+          capture="environment"
           disabled={busy || !album.is_enabled}
           onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
           className="hidden"
