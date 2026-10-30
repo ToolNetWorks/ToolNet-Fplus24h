@@ -6,6 +6,7 @@ States are independent from verified publication; all actions are tenant scoped.
 
 Lock order: Pipeline -> Job -> MediaAllocation -> handoff. Never do I/O here.
 """
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.utils import timezone
 from modules.pipelines.models import Pipeline
@@ -16,6 +17,9 @@ from modules.publishing.models import (
 from modules.publishing.scheduler_models import AccountGroupEligibility
 from modules.publishing.manual_handoff_models import (
     ManualPublishingHandoff as Handoff, ManualPublishingEvent as Event,
+)
+from modules.publishing.caption_models import (
+    PipelineCaptionSettings as Settings, JobCaption,
 )
 from modules.publishing.services import media_selection
 from modules.publishing.services.post_verification import SECRET_MARKER
@@ -243,3 +247,254 @@ def mutate_handoff(*, pipeline_id, job_id, actor, action, expected_version, outc
                          outcome=outcome if action == 'report' else '',
                          note=note.strip() if action == 'report' else '')
     return _payload(row)
+
+
+# --- Step 9.7.16b: Handoff queue + unified 7-step publication status ---
+
+PUBLICATION_STATUS = {
+    'awaiting_ai': 'Chờ AI',
+    'approved': 'Đã duyệt',
+    'awaiting_handoff': 'Chờ bàn giao',
+    'processing': 'Đang xử lý',
+    'awaiting_verification': 'Chờ xác minh',
+    'published': 'Thành công',
+    'failed': 'Thất bại',
+}
+
+
+class PublicationStatus:
+    AWAITING_AI = 'awaiting_ai'
+    APPROVED = 'approved'
+    AWAITING_HANDOFF = 'awaiting_handoff'
+    PROCESSING = 'processing'
+    AWAITING_VERIFICATION = 'awaiting_verification'
+    PUBLISHED = 'published'
+    FAILED = 'failed'
+
+
+def _resolve_caption(job):
+    """Return the JobCaption record for a job, or None."""
+    try:
+        return JobCaption.objects.filter(
+            job_id=job.pk, pipeline_id=job.pipeline_id,
+        ).first()
+    except JobCaption.DoesNotExist:
+        return None
+
+
+def _has_trusted_verification(job):
+    """True only when a TrustedPostVerification row exists for this job."""
+    from modules.publishing.verification_models import TrustedPostVerification
+    return TrustedPostVerification.objects.filter(
+        pipeline_id=job.pipeline_id, job_id=job.pk,
+    ).exists()
+
+
+def compute_publication_status(job):
+    """Map (Job state + Caption state + Handoff state + verification)
+    to one of the 7 human-readable publication statuses.
+
+    A Job is only 'published' (Thành công) when:
+      - job.state == PUBLISHED
+      - job.external_post_id is non-empty
+      - a TrustedPostVerification row exists
+
+    A Job is 'awaiting_verification' (Chờ xác minh) when:
+      - job.state in (DISPATCHING, UNCERTAIN), OR
+      - handoff is in a reported-but-unverified state
+
+    No status may imply successful publication without trusted verification.
+    """
+    handoff = getattr(job, 'manual_handoff', None)
+    caption = _resolve_caption(job)
+    settings = Settings.objects.filter(
+        pipeline_id=job.pipeline_id, enabled=True,
+    ).first()
+
+    # 7. Thất bại (Failure) — terminal failure or rejected/abandoned handoff.
+    if job.state in (PublishingJob.State.FAILED, PublishingJob.State.CANCELLED):
+        return PublicationStatus.FAILED
+    if handoff and handoff.state in (
+        Handoff.State.REJECTED, Handoff.State.ABANDONED,
+    ):
+        return PublicationStatus.FAILED
+
+    # 6. Thành công (Success) — only with trusted verification.
+    if job.state == PublishingJob.State.PUBLISHED:
+        if job.external_post_id and _has_trusted_verification(job):
+            return PublicationStatus.PUBLISHED
+        # PUBLISHED without trusted verification is treated as awaiting verification.
+        return PublicationStatus.AWAITING_VERIFICATION
+
+    # 4. Đang xử lý (Processing) — CTV is actively working on Facebook.
+    if handoff and handoff.state in (
+        Handoff.State.OPENED, Handoff.State.SUBMITTED,
+    ):
+        return PublicationStatus.PROCESSING
+
+    # 3. Chờ bàn giao (Waiting for handoff) — images reserved, CTV can open Facebook.
+    if handoff and handoff.state == Handoff.State.PREPARED:
+        return PublicationStatus.AWAITING_HANDOFF
+
+    # 5. Chờ xác minh (Waiting for verification) — dispatched but result unknown.
+    if job.state in (
+        PublishingJob.State.DISPATCHING, PublishingJob.State.UNCERTAIN,
+    ):
+        return PublicationStatus.AWAITING_VERIFICATION
+    if handoff and handoff.state in (
+        Handoff.State.PENDING, Handoff.State.INCONCLUSIVE,
+    ):
+        return PublicationStatus.AWAITING_VERIFICATION
+
+    # 1. Chờ AI (Waiting for AI) — caption settings active, caption not yet approved.
+    if settings and settings.enabled and settings.auto_generate:
+        if caption is None or caption.state in (
+            JobCaption.State.GENERATING,
+            JobCaption.State.FAILED,
+            JobCaption.State.DRAFT,
+        ):
+            return PublicationStatus.AWAITING_AI
+
+    # 2. Đã duyệt (Approved) / Chờ bàn giao entry point — caption approved or
+    #    backward-compatible (no AI settings), job QUEUED, no handoff started.
+    if job.state in (
+        PublishingJob.State.QUEUED, PublishingJob.State.CLAIMED,
+        PublishingJob.State.READY,
+    ):
+        # If caption settings exist and require approval, verify caption is approved.
+        if settings and settings.enabled:
+            if caption is None or caption.state != JobCaption.State.APPROVED:
+                return PublicationStatus.AWAITING_AI
+        # Worker processing states are "processing" only if claimed/ready
+        # by an automated worker (no handoff). Handoff PREPARED is handled above.
+        if job.state in (PublishingJob.State.CLAIMED, PublishingJob.State.READY):
+            return PublicationStatus.PROCESSING
+        # QUEUED + approved caption + no handoff → ready for CTV to prepare.
+        return PublicationStatus.APPROVED
+
+    # Any remaining state defaults to awaiting verification (fail-safe).
+    return PublicationStatus.AWAITING_VERIFICATION
+
+
+def _queue_payload(job):
+    """Build a rich payload for one job in the handoff queue."""
+    caption = _resolve_caption(job)
+    handoff = getattr(job, 'manual_handoff', None)
+    media_items = []
+    if job.media_allocation_id:
+        from modules.publishing.services.media_selection import allocation_payload
+        media_items = allocation_payload(job.media_allocation)['images']
+    has_trusted = _has_trusted_verification(job)
+    unified_status = compute_publication_status(job)
+
+    ready = (unified_status in (
+        PublicationStatus.APPROVED, PublicationStatus.AWAITING_HANDOFF,
+    ))
+    can_prepare = ready and not handoff and job.state == PublishingJob.State.QUEUED
+    if handoff and handoff.state == Handoff.State.PREPARED:
+        can_prepare = True
+
+    return {
+        'job_id': str(job.pk),
+        'pipeline_id': str(job.pipeline_id),
+        'state': job.state,
+        'unified_status': unified_status,
+        'unified_status_label': PUBLICATION_STATUS[unified_status],
+        'caption': job.caption,
+        'caption_state': caption.state if caption else None,
+        'caption_revision': caption.revision if caption else 0,
+        'account': {
+            'id': str(job.facebook_account_id),
+            'label': job.facebook_account.label,
+        },
+        'group': {
+            'id': str(job.facebook_group_id),
+            'name': job.facebook_group.name,
+            'url': job.facebook_group.group_url,
+            'key': job.facebook_group.group_key,
+        },
+        'scheduled_at': job.scheduled_at.isoformat(),
+        'next_run_at': job.next_run_at.isoformat(),
+        'attempt_count': job.attempt_count,
+        'max_attempts': job.max_attempts,
+        'media_allocation_id': str(job.media_allocation_id) if job.media_allocation_id else None,
+        'media': media_items,
+        'external_post_id': job.external_post_id or None,
+        'verified_published': has_trusted,
+        'error_code': job.error_code or None,
+        'handoff': _payload(handoff) if handoff else None,
+        'can_prepare': can_prepare,
+        'automatic_facebook_posting': False,
+        'facebook_groups_api_supported': False,
+    }
+
+
+def list_handoff_queue(*, pipeline_id, page=1, page_size=20, status_filter=None,
+                       now=None):
+    """Paginated CTV-scoped list of all publishing jobs with unified status.
+
+    Shows the complete AI→handoff pipeline from Chờ AI to Thành công/Thất bại.
+    Filters by one of the 7 unified statuses when status_filter is provided.
+    """
+    if type(page) is not int or page < 1:
+        raise HandoffError('page phải >= 1.')
+    if type(page_size) is not int or not 1 <= page_size <= 50:
+        raise HandoffError('page_size phải từ 1 đến 50.')
+    valid_statuses = set(PUBLICATION_STATUS.keys())
+    if status_filter and status_filter not in valid_statuses:
+        raise HandoffError('Trạng thái lọc không hợp lệ.')
+
+    pipeline = Pipeline.objects.filter(pk=pipeline_id).first()
+    if pipeline is None:
+        raise HandoffError('Pipeline không tồn tại.')
+
+    now = now or timezone.now()
+    qs = (
+        PublishingJob.objects
+        .select_related(
+            'facebook_account', 'facebook_group',
+            'manual_handoff', 'media_allocation',
+        )
+        .filter(pipeline_id=pipeline.pk)
+        .order_by('-scheduled_at', '-pk')
+    )
+
+    paged = Paginator(qs, page_size)
+    page_obj = paged.get_page(page)
+    if page_obj.number != page:
+        raise HandoffError('Trang không tồn tại.')
+
+    items = []
+    for job in page_obj.object_list:
+        entry = _queue_payload(job)
+        if status_filter and entry['unified_status'] != status_filter:
+            continue
+        items.append(entry)
+
+    counts = {}
+    for status_key in valid_statuses:
+        counts[status_key] = 0
+    for job in qs:
+        payload = _queue_payload(job)
+        counts[payload['unified_status']] = counts.get(payload['unified_status'], 0) + 1
+
+    return {
+        'pipeline_id': str(pipeline.pk),
+        'items': items,
+        'summary': {
+            'total': counts,
+        },
+        'pagination': {
+            'page': page_obj.number,
+            'page_size': page_size,
+            'total': paged.count,
+            'total_pages': paged.num_pages,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+        },
+        'status_labels': dict(
+            (k, PUBLICATION_STATUS[k]) for k in sorted(valid_statuses)
+        ),
+        'automatic_facebook_posting': False,
+        'facebook_groups_api_supported': False,
+    }

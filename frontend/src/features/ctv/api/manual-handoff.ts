@@ -67,3 +67,101 @@ export async function manualAction(
 export function manualMediaUrl(pipelineId: string, item: ManualMedia): string {
   return `/api/v1/pipelines/${encodeURIComponent(pipelineId)}/albums/${encodeURIComponent(item.album_id)}/images/${encodeURIComponent(item.image_id)}/content/`;
 }
+
+export type PublicationStatus =
+  | 'awaiting_ai' | 'approved' | 'awaiting_handoff'
+  | 'processing' | 'awaiting_verification' | 'published' | 'failed';
+
+export const PUBLICATION_STATUS_LABELS: Record<PublicationStatus, string> = {
+  awaiting_ai: 'Chờ AI',
+  approved: 'Đã duyệt',
+  awaiting_handoff: 'Chờ bàn giao',
+  processing: 'Đang xử lý',
+  awaiting_verification: 'Chờ xác minh',
+  published: 'Thành công',
+  failed: 'Thất bại',
+};
+
+export const PUBLICATION_STATUS_COLORS: Record<PublicationStatus, string> = {
+  awaiting_ai: 'bg-slate-100 text-slate-600',
+  approved: 'bg-amber-100 text-amber-800',
+  awaiting_handoff: 'bg-blue-100 text-blue-800',
+  processing: 'bg-purple-100 text-purple-800',
+  awaiting_verification: 'bg-orange-100 text-orange-800',
+  published: 'bg-green-100 text-green-800',
+  failed: 'bg-red-100 text-red-800',
+};
+
+export interface QueueMedia {
+  image_id: string;
+  album_id: string;
+  position: number;
+}
+
+export interface QueueItem {
+  job_id: string;
+  pipeline_id: string;
+  state: string;
+  unified_status: PublicationStatus;
+  unified_status_label: string;
+  caption: string;
+  caption_state: string | null;
+  caption_revision: number;
+  account: { id: string; label: string };
+  group: { id: string; name: string; url: string; key: string };
+  scheduled_at: string;
+  next_run_at: string;
+  attempt_count: number;
+  max_attempts: number;
+  media_allocation_id: string | null;
+  media: QueueMedia[];
+  external_post_id: string | null;
+  verified_published: boolean;
+  error_code: string | null;
+  handoff: ManualHandoff | null;
+  can_prepare: boolean;
+  automatic_facebook_posting: false;
+  facebook_groups_api_supported: false;
+}
+
+export interface HandoffQueueResponse {
+  pipeline_id: string;
+  items: QueueItem[];
+  summary: { total: Record<PublicationStatus, number> };
+  pagination: {
+    page: number;
+    page_size: number;
+    total: number;
+    total_pages: number;
+    has_next: boolean;
+    has_previous: boolean;
+  };
+  status_labels: Record<PublicationStatus, string>;
+  automatic_facebook_posting: false;
+  facebook_groups_api_supported: false;
+}
+
+const queueEndpoint = (pipelineId: string) =>
+  `/api/v1/pipelines/${encodeURIComponent(pipelineId)}/handoff-queue/`;
+
+export async function listHandoffQueue(
+  pipelineId: string,
+  options: { page?: number; pageSize?: number; status?: string },
+  signal?: AbortSignal,
+): Promise<HandoffQueueResponse> {
+  const params = new URLSearchParams({
+    page: String(options.page ?? 1),
+    page_size: String(options.pageSize ?? 20),
+  });
+  if (options.status) params.set('status', options.status);
+  const result = await parse<HandoffQueueResponse>(
+    await fetch(`${queueEndpoint(pipelineId)}?${params}`, {
+      credentials: 'same-origin', cache: 'no-store', signal,
+    }),
+  );
+  if (result.automatic_facebook_posting !== false ||
+      result.facebook_groups_api_supported !== false) {
+    throw new Error('Cấu hình bảo mật không hợp lệ.');
+  }
+  return result;
+}

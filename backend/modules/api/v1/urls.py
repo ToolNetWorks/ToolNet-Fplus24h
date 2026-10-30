@@ -9,7 +9,9 @@ from .publishing.review_case_views import (
 from .publishing.review_sla_views import ReviewSLAAPIView
 from .publishing.integrity_audit_views import PublishingIntegrityAuditAPIView
 from .publishing.operations_health_views import OperationsHealthAPIView
-from .publishing.manual_handoff_views import ManualHandoffAPIView
+from .publishing.manual_handoff_views import (
+    ManualHandoffAPIView, HandoffQueueAPIView,
+)
 from .publishing.pilot_views import PublishingPilotReadinessAPIView
 from .publishing.performance_views import PipelinePerformanceAPIView
 from .publishing.release_views import PipelineReleaseReadinessAPIView
@@ -91,6 +93,8 @@ urlpatterns = [
          PublishingPilotReadinessAPIView.as_view(), name="pipeline-pilot-readiness"),
     path("pipelines/<uuid:pipeline_id>/publishing-jobs/<uuid:job_id>/manual-handoff/",
          ManualHandoffAPIView.as_view(), name="publishing-manual-handoff"),
+    path("pipelines/<uuid:pipeline_id>/handoff-queue/",
+         HandoffQueueAPIView.as_view(), name="pipeline-handoff-queue"),
     path("pipelines/<uuid:pipeline_id>/worker-guard/",
          WorkerGuardAPIView.as_view(), name="pipeline-worker-guard"),
     path("pipelines/<uuid:pipeline_id>/operational-alerts/",

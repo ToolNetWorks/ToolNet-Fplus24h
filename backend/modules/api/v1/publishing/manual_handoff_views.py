@@ -7,8 +7,12 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 from modules.api.v1.albums.views import resolve_pipeline
+from modules.publishing.manual_handoff_models import (
+    ManualPublishingHandoff as Handoff,
+)
 from modules.publishing.services.manual_handoff import (
-    get_handoff, prepare_handoff, mutate_handoff, HandoffError, HandoffConflict,
+    get_handoff, prepare_handoff, mutate_handoff, list_handoff_queue,
+    HandoffError, HandoffConflict,
 )
 
 
@@ -64,8 +68,11 @@ class ManualHandoffAPIView(APIView):
         value = form.validated_data
         try:
             if value['action'] == 'prepare':
+                existed = Handoff.objects.filter(
+                    job__pk=job_id, pipeline=pipeline).exists()
                 data = prepare_handoff(pipeline_id=pipeline.pk, job_id=job_id,
                                        actor=request.user)
+                status_code = 200 if existed else 201
             else:
                 data = mutate_handoff(
                     pipeline_id=pipeline.pk, job_id=job_id,
@@ -73,17 +80,78 @@ class ManualHandoffAPIView(APIView):
                     expected_version=value['expected_version'],
                     outcome=value.get('outcome', ''), note=value.get('note', ''),
                 )
+                status_code = 200
         except HandoffConflict as exc:
             return self._error(str(exc), 409)
         except HandoffError as exc:
             return self._error(str(exc), 400)
         response = Response({'success': True, 'data': data},
-                            status=201 if value['action'] == 'prepare' else 200)
+                            status=status_code)
         response['Cache-Control'] = 'private, no-store'
         return response
 
     @staticmethod
     def _error(message, status):
         response = Response({'success': False, 'message': message}, status=status)
+        response['Cache-Control'] = 'private, no-store'
+        return response
+
+
+class HandoffQueueThrottle(UserRateThrottle):
+    rate = '60/min'
+
+
+class HandoffQueueQuery(serializers.Serializer):
+    page = serializers.IntegerField(min_value=1, default=1)
+    page_size = serializers.IntegerField(min_value=1, max_value=50, default=20)
+    status = serializers.ChoiceField(choices=[
+        ('awaiting_ai', 'Chờ AI'),
+        ('approved', 'Đã duyệt'),
+        ('awaiting_handoff', 'Chờ bàn giao'),
+        ('processing', 'Đang xử lý'),
+        ('awaiting_verification', 'Chờ xác minh'),
+        ('published', 'Thành công'),
+        ('failed', 'Thất bại'),
+    ], required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        raw = self.initial_data
+        if not isinstance(raw, dict) or not set(raw).issubset({
+            'page', 'page_size', 'status',
+        }):
+            raise serializers.ValidationError('Chỉ nhận page, page_size, status.')
+        return attrs
+
+
+class HandoffQueueAPIView(APIView):
+    """CTV-facing list of all publishing jobs with unified 7-step status.
+
+    Read-only; never exposes claim_token, worker_id, or credentials.
+    Only PREPARED handoff can be mutated (via the per-job endpoint).
+    """
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [HandoffQueueThrottle]
+
+    def get(self, request, pipeline_id):
+        pipeline = resolve_pipeline(request.user, pipeline_id)
+        query = HandoffQueueQuery(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        val = query.validated_data
+        try:
+            data = list_handoff_queue(
+                pipeline_id=pipeline.pk,
+                page=val['page'],
+                page_size=val['page_size'],
+                status_filter=val.get('status') or None,
+            )
+        except HandoffError as exc:
+            response = Response(
+                {'success': False, 'message': str(exc)},
+                status=400,
+            )
+            response['Cache-Control'] = 'private, no-store'
+            return response
+        response = Response({'success': True, 'data': data})
         response['Cache-Control'] = 'private, no-store'
         return response
