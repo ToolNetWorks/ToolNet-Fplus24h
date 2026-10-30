@@ -26,7 +26,7 @@ class PipelineSchedule(models.Model):
     next_run_at = models.DateTimeField()
     caption_template = models.TextField(max_length=5000, blank=True, default='')
     require_anonymous = models.BooleanField(default=True)
-    require_nonmember = models.BooleanField(default=True)
+    require_nonmember = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

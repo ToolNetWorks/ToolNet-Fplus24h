@@ -196,8 +196,7 @@ def plan_schedule(*, schedule_id, commit=False, now=None):
     ):
         if schedule.require_anonymous and not row.can_post_anonymous:
             continue
-        if schedule.require_nonmember and not row.can_post_nonmember:
-            continue
+        # Group membership is not a filtering criterion. Account may be member or non-member.
         verified_pairs[row.group_id].append(row.account_id)
         if row.account_id in valid_accounts:
             eligibilities[row.group_id].append(row.account_id)

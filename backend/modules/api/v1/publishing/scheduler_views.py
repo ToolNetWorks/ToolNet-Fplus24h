@@ -34,7 +34,7 @@ class ScheduleSerializer(serializers.Serializer):
     start_at = serializers.DateTimeField()
     caption_template = serializers.CharField(max_length=5000, allow_blank=True, required=False)
     require_anonymous = serializers.BooleanField(default=True)
-    require_nonmember = serializers.BooleanField(default=True)
+    require_nonmember = serializers.BooleanField(default=False)
     enabled = serializers.BooleanField(default=False)
 
     def validate(self, attrs):

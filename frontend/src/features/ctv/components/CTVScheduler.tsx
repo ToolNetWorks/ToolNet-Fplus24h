@@ -36,7 +36,7 @@ function newForm(): FormSchedule {
     name: "", enabled: false, interval_minutes: 1440,
     max_groups_per_run: 10, timezone_name: "Asia/Ho_Chi_Minh",
     start_at_local: todayLocal(), caption_template: "",
-    require_anonymous: true, require_nonmember: true,
+    require_anonymous: true, require_nonmember: false,
   };
 }
 function fromSchedule(row: PipelineSchedule): FormSchedule {
@@ -59,7 +59,7 @@ function serializeDraft(draft: FormSchedule, captionConfig: CaptionConfig | null
     start_at: new Date(draft.start_at_local).toISOString(),
     caption_template: aiEnabled ? '' : draft.caption_template.trim(),
     // Both requirements are deliberately mandatory in this CTV workflow.
-    require_anonymous: true, require_nonmember: true,
+    require_anonymous: true, require_nonmember: false,
   };
 }
 const reasonLabel: Record<string, string> = {
@@ -448,7 +448,7 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
                 {!creating && <button type="button" disabled={working || dirty} className={btn} onClick={() => void toggleSchedule()}>
                   {selected?.enabled ? "Tắt lịch" : "Bật lịch"}
                 </button>}
-                <button type="submit" disabled={working || (!creating && !dirty && selected?.require_anonymous === true && selected?.require_nonmember === true)} className={primaryBtn}><Save size={14}/>{working ? "Đang lưu" : "Lưu cấu hình"}</button>
+                <button type="submit" disabled={working || (!creating && !dirty && selected?.require_anonymous === true && selected?.require_nonmember === false)} className={primaryBtn}><Save size={14}/>{working ? "Đang lưu" : "Lưu cấu hình"}</button>
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
@@ -459,7 +459,6 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
               <label className={labelClass}>Múi giờ (dùng cho biến ngày trong caption)<input required maxLength={64} className={inputClass} value={draft.timezone_name} onChange={(e) => setField("timezone_name", e.target.value)} placeholder="Asia/Ho_Chi_Minh" /></label>
               <div className="space-y-2 rounded-md border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
                 <div><CheckCircle2 size={14} className="mr-1 inline text-green-600"/> Đăng ẩn danh: bắt buộc</div>
-                <div><CheckCircle2 size={14} className="mr-1 inline text-green-600"/> Không tham gia Group: bắt buộc</div>
               </div>
             </div>
             {!aiCaptionEnabled && <label className={labelClass}>Mẫu caption đã duyệt<textarea required rows={4} maxLength={5000} className={inputClass} value={draft.caption_template} onChange={(e) => setField("caption_template", e.target.value)} placeholder="Nội dung {group_name} ngày {date}" />
@@ -528,9 +527,9 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
               <button type="button" className={btn} disabled={groupPage >= groupsTotalPages} onClick={() => setGroupPage((n) => n + 1)} aria-label="Trang Group sau"><ChevronRight size={14}/></button></div>
           </div>
         </div>
-        {view === "eligibility" ? <form onSubmit={(e) => void storeEligibility(e)} className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className={headingClass}>Xác minh quyền theo cặp Account–Group</h2>
-          <p className="text-xs text-amber-700">Chỉ chọn Đã kiểm tra khi có bằng chứng thực tế. Hệ thống không thể tự xác nhận quyền đăng ẩn danh hoặc quyền không tham gia Group.</p>
+        {view === "eligibility" ?         <form onSubmit={(e) => void storeEligibility(e)} className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className={headingClass}>Xác minh quyền đăng ẩn danh theo cặp Account–Group</h2>
+          <p className="text-xs text-amber-700">Chỉ chọn Đã kiểm tra khi có bằng chứng thực tế về quyền đăng ẩn danh. Thành viên hay không thành viên không phải điều kiện loại trừ.</p>
           <label className={labelClass}>Trạng thái<select className={inputClass} value={eligState} onChange={(e) => setEligState(e.target.value as EligibilityState)}><option value="unknown">Chưa xác minh</option><option value="verified">Đã kiểm tra thủ công</option><option value="blocked">Không đủ điều kiện</option></select></label>
           <label className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={canAnon} onChange={(e) => setCanAnon(e.target.checked)} disabled={eligState !== "verified"}/> Đã xác minh có thể đăng ẩn danh</label>
           <label className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={canNonmember} onChange={(e) => setCanNonmember(e.target.checked)} disabled={eligState !== "verified"}/> Đã xác minh được đăng khi chưa tham gia</label>
