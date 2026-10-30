@@ -14,9 +14,12 @@ from modules.pipelines.models import Pipeline
 from modules.facebook_publishing.services.config import load_settings
 from modules.facebook_publishing.services.worker import (
     claim_job, prepare_session, prepare_media, run_dry_run, run_publish,
-    WorkerError, WorkerNotEnabledError,
+    WorkerError, WorkerNotEnabledError, _can_publish,
 )
+from modules.facebook_publishing.services.account_binding import release_running_op
 from modules.facebook_publishing.services.audit_log import AuditLogger
+from modules.facebook_publishing.services.eligibility import check_group_eligibility
+from modules.facebook_publishing.models import WorkerRunningOp
 
 logger = logging.getLogger(__name__)
 
@@ -34,31 +37,26 @@ class Command(BaseCommand):
         parser.add_argument('--lease-seconds', type=int, default=600)
         parser.add_argument('--worker-id',
                             default='fb-worker-' + socket.gethostname().split('.')[0][:30])
-        parser.add_argument('--dry-run', action='store_true',
-                            help='Override: force dry-run mode even if config says otherwise.')
+        parser.add_argument('--force-publish', action='store_true',
+                            help='Override dry-run and submit a real post. '
+                                 'Requires FACEBOOK_PUBLISHING_ENABLED=true.')
 
     def handle(self, *args, **kwargs):
         pipeline_id = kwargs['pipeline_id']
         if not Pipeline.objects.filter(pk=pipeline_id).exists():
             raise CommandError(f'Pipeline {pipeline_id} does not exist.')
 
-        settings = load_settings(pipeline_id)
-        force_dry_run = kwargs.get('dry_run', False)
-
-        if force_dry_run:
-            logger.info('DRY RUN override requested.')
-
-        if not settings.enabled and not (settings.dry_run or force_dry_run):
-            raise CommandError(
-                'FACEBOOK_PUBLISHING_ENABLED=false. Worker is disabled.'
-            )
+        if kwargs['force_publish'] and not kwargs['once']:
+            raise CommandError('--force-publish requires --once (exactly one post).')
+        if kwargs['force_publish'] and kwargs['watch']:
+            raise CommandError('--force-publish cannot be used with --watch.')
 
         worker_id = kwargs['worker_id']
         audit = AuditLogger(worker_id=worker_id)
 
-        if kwargs['once']:
+        if kwargs['once'] or kwargs['force_publish']:
             self._process_one(
-                pipeline_id, worker_id, settings, force_dry_run, audit,
+                pipeline_id, worker_id, kwargs['force_publish'], audit,
             )
             return
 
@@ -69,7 +67,7 @@ class Command(BaseCommand):
             while True:
                 try:
                     self._process_one(
-                        pipeline_id, worker_id, settings, force_dry_run, audit,
+                        pipeline_id, worker_id, False, audit,
                     )
                 except WorkerNotEnabledError:
                     logger.info('Worker not enabled for pipeline %s, sleeping.', pipeline_id)
@@ -78,81 +76,100 @@ class Command(BaseCommand):
                 time.sleep(poll)
             return
 
-        # Default: prepare one and print inspection info
+        # Default: claim and print inspection info
         claim = claim_job(
             pipeline_id=pipeline_id, worker_id=worker_id,
-            lease_seconds=kwargs['lease_seconds'],
         )
         if claim is None:
             self.stdout.write('No due job.')
             return
         self.stdout.write(f"Claimed job: {claim['job']['id']}")
 
-    def _process_one(self, pipeline_id, worker_id, settings, force_dry_run, audit):
+    def _process_one(self, pipeline_id, worker_id, force_publish, audit):
         """Process a single job claim through the full Worker lifecycle."""
         claim_result = claim_job(
             pipeline_id=pipeline_id, worker_id=worker_id,
         )
         if claim_result is None:
             logger.info('No due job for pipeline %s', pipeline_id)
+            self.stdout.write('No due job.')
             return
 
-        if force_dry_run:
-            object.__setattr__(claim_result['settings'], 'dry_run', True)
-            object.__setattr__(claim_result['settings'], 'enabled', True)
-            logger.info('Force dry-run override applied.')
-
-        effective_settings = claim_result['settings']
+        settings = claim_result['settings']
+        config = claim_result.get('config')
         claim_token = claim_result['claim_token']
 
+        if force_publish:
+            # Override dry-run for exactly one post
+            if not settings.enabled and not _can_publish(settings, config):
+                logger.error('Cannot force-publish: Worker is disabled.')
+                self.stdout.write('ERROR: Worker is disabled.')
+                return
+            settings.dry_run = False
+            settings.enabled = True
+            if config:
+                config.dry_run = False
+                config.enabled = True
+            logger.info('Force publish override applied.')
+            audit.log_event('force_publish_override_applied')
+
+        is_dry_run = settings.dry_run if not config else config.dry_run
+
         try:
-            session = prepare_session(claim_result, effective_settings)
+            session = prepare_session(claim_result, settings)
             audit.log_event('session_prepared', ready=True)
 
             caption, media_info = prepare_media(
-                claim_result, session, effective_settings,
+                claim_result, session, settings,
             )
-            audit.log_event('media_prepared', images=str(media_info.get('images', [])))
+            audit.log_event(
+                'media_prepared',
+                images=str(media_info.get('images', [])),
+                caption_length=len(caption),
+            )
 
-            from modules.facebook_publishing.services.eligibility import \
-                check_group_eligibility
             eligibility = check_group_eligibility(
                 pipeline_id=pipeline_id,
                 account_id=session.bundle.account_id,
-                group_id=session.bundle.account_id if False else
-                claim_result['job_obj'].facebook_group_id,
+                group_id=session.publish_job.group_id,
             )
 
-            if effective_settings.dry_run:
+            if is_dry_run:
                 result = run_dry_run(
-                    session, effective_settings, eligibility, caption,
+                    session, settings, eligibility, caption, claim_result,
                 )
                 audit.log_event(
                     'dry_run_completed',
                     result=result.get('result', 'unknown'),
                 )
-                self.stdout.write(f"DRY RUN result: {result}")
+                self.stdout.write(json.dumps(result, default=str, ensure_ascii=False))
             else:
                 result = run_publish(
-                    session, effective_settings, eligibility, caption,
-                    claim_token,
+                    session, settings, eligibility, caption,
+                    claim_token, config,
                 )
                 audit.log_event(
                     'publish_completed',
                     result=result.get('result', 'unknown'),
                 )
-                self.stdout.write(f"Publish result: {result}")
+                self.stdout.write(json.dumps(result, default=str, ensure_ascii=False))
 
         except WorkerNotEnabledError:
+            self.stdout.write('Worker not enabled for this Pipeline.')
             logger.info('Worker not enabled, skipping.')
         except WorkerError as exc:
-            logger.error('Worker error processing job: %s', exc)
+            self.stdout.write(f'Worker error: {exc}')
+            logger.error('Worker error: %s', exc)
             raise
         finally:
             # Release the concurrency lock
-            from modules.facebook_publishing.models import WorkerRunningOp
             try:
-                op = WorkerRunningOp.objects.get(publish_job=claim_result['worker_job'])
+                op = WorkerRunningOp.objects.get(
+                    publish_job=claim_result['worker_job'],
+                )
                 release_running_op(op)
+                audit.log_event('running_op_released')
             except WorkerRunningOp.DoesNotExist:
                 pass
+
+import json

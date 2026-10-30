@@ -10,8 +10,6 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-POST_ID_RE = re.compile(r'\b\d+_\d+\b')
-
 
 @dataclass
 class VerificationResult:
@@ -23,9 +21,10 @@ class VerificationResult:
 class PublishingVerification:
     """Verify that a post was actually published by inspecting the browser UI."""
 
-    def __init__(self, page, settings):
+    def __init__(self, page, settings, expected_caption: Optional[str] = None):
         self._page = page
         self._settings = settings
+        self._expected_caption = expected_caption
 
     def _log(self, message):
         logger.info('Verification: %s', message)
@@ -34,10 +33,13 @@ class PublishingVerification:
         """Inspect the browser to confirm the post is actually visible.
 
         Returns:
-            state = 'PUBLISHED' only if the post appears in the Group feed
-                    with visible content (not just a post_id acknowledgment).
+            state = 'PUBLISHED' only if a post is found in the Group feed
+                    that contains the expected caption text (not just any article).
             state = 'PENDING_APPROVAL' if the post appears but is held
                     for admin approval.
+            state = 'REJECTED' if the post was rejected.
+            state = 'SUBMITTED_UNVERIFIED' if a post ID is found but content
+                    cannot be confirmed.
             state = 'UNCERTAIN' if visibility cannot be confirmed.
         """
         try:
@@ -47,7 +49,7 @@ class PublishingVerification:
             try:
                 self._page.wait_for_selector(
                     '[role="feed"], .groups_newsfeed, #pagelet-bluebar',
-                    timeout=self._settings.browser_timeout_seconds * 1000,
+                    timeout=int(self._settings.browser_timeout_seconds) * 1000,
                 )
                 content_loaded = True
             except Exception:
@@ -61,13 +63,13 @@ class PublishingVerification:
                 )
 
             visible_text = self._page.inner_text('body') or ''
+            text_lower = visible_text.lower()
 
             # Check for pending approval indicators
             pending_indicators = [
                 'pending', 'chờ duyệt', 'awaiting approval',
                 'đang chờ duyệt', 'chờ kiểm duyệt',
             ]
-            text_lower = visible_text.lower()
             is_pending = any(ind in text_lower for ind in pending_indicators)
 
             # Check for rejection indicators
@@ -77,23 +79,7 @@ class PublishingVerification:
             ]
             is_rejected = any(ind in text_lower for ind in rejected_indicators)
 
-            # Check for visible post content — look for the post body in the feed
-            post_body_selectors = [
-                '[role="article"]',
-                '[data-testid="post_container"]',
-                '.userContent', 'div[role="article"]',
-            ]
-            has_visible_post = False
-            for sel in post_body_selectors:
-                try:
-                    el = self._page.query_selector(sel)
-                    if el is not None and el.is_visible():
-                        has_visible_post = True
-                        break
-                except Exception:
-                    continue
-
-            # Attempt to extract a post_id from the URL or page content
+            # Attempt to extract a post_id from the URL
             current_url = self._page.url or ''
             post_id = None
             id_match = re.search(r'/posts/(\d+_\d+)', current_url)
@@ -114,44 +100,70 @@ class PublishingVerification:
                     detail='Post appears to require admin approval.',
                 )
 
-            if has_visible_post:
-                # Confirm the post actually has visible content, not just a container
-                post_text = ''
+            # Look for the specific post article in the feed
+            # IMPORTANT: We must match the EXPECTED caption, not just any article
+            article = None
+            try:
+                article = self._page.query_selector('[role="article"]')
+            except Exception:
+                pass
+
+            if article is not None:
                 try:
-                    article = self._page.query_selector('[role="article"]')
-                    if article:
+                    if article.is_visible():
                         post_text = article.inner_text() or ''
+
+                        if self._expected_caption and post_text.strip():
+                            # Verify the visible post contains the expected caption
+                            # Use a substring match on a normalized fragment
+                            expected_fragment = self._expected_caption.strip()[:200]
+                            post_normalized = post_text.lower().replace('\n', ' ').strip()
+                            if expected_fragment.lower() in post_normalized:
+                                return VerificationResult(
+                                    state='PUBLISHED',
+                                    external_post_id=post_id,
+                                    detail='Post confirmed visible in Group feed '
+                                           'with matching caption content.',
+                                )
+                            else:
+                                # A post article exists but content doesn't match
+                                self._log(
+                                    'Post article found but caption content does not match.'
+                                )
+                                return VerificationResult(
+                                    state='UNCERTAIN',
+                                    external_post_id=post_id,
+                                    detail='Post container visible but content does not '
+                                           'match expected caption.',
+                                )
+                        elif not self._expected_caption:
+                            # Without a caption to match, we cannot be certain
+                            # This branch should not be taken in production
+                            return VerificationResult(
+                                state='SUBMITTED_UNVERIFIED',
+                                external_post_id=post_id,
+                                detail='Post container found but no expected caption '
+                                       'for verification.',
+                            )
                 except Exception:
                     pass
 
-                if post_text.strip():
-                    return VerificationResult(
-                        state='PUBLISHED',
-                        external_post_id=post_id,
-                        detail='Post confirmed visible in Group feed.',
-                    )
-                else:
-                    return VerificationResult(
-                        state='UNCERTAIN',
-                        external_post_id=post_id,
-                        detail='Post container found but content not verifiable.',
-                    )
-
+            # No matching post found — even if an article exists
             if post_id:
                 return VerificationResult(
                     state='SUBMITTED_UNVERIFIED',
                     external_post_id=post_id,
-                    detail='Post ID found but visibility not confirmed in feed.',
+                    detail='Post ID found but visibility/content not confirmed in feed.',
                 )
 
             return VerificationResult(
-                state='SUBMITTED_UNVERIFIED',
+                state='UNCERTAIN',
                 external_post_id=None,
-                detail='Post submitted but no post ID or content found in page.',
+                detail='No post ID or visible post content found on page.',
             )
 
         except Exception as exc:
-            self._log(f'Exception during verification: {exc}')
+            self._log(f'Exception during verification: {type(exc).__name__}')
             return VerificationResult(
                 state='UNCERTAIN',
                 external_post_id=None,
@@ -162,6 +174,7 @@ class PublishingVerification:
         """Check if Facebook is showing a CAPTCHA or checkpoint challenge.
 
         Returns the checkpoint type string if detected, None otherwise.
+        Never bypasses these challenges.
         """
         try:
             body_text = (self._page.inner_text('body') or '').lower()

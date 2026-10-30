@@ -40,19 +40,13 @@ class MediaStager:
         self._temp_files: List[str] = []
 
     def _get_r2_client(self):
-        import boto3
+        from modules.albums.services.r2_storage import get_r2_client
+        from modules.albums.services.r2_storage import read_r2_config
         cfg = read_r2_config()
-        if not cfg['bucket'] or not cfg['access_key'] or not cfg['secret_key']:
+        if not cfg.get('bucket') or not cfg.get('access_key') or not cfg.get('secret_key'):
             raise MediaStagingError('R2 configuration is incomplete.')
-        client = boto3.client(
-            's3',
-            endpoint_url=cfg['endpoint_url'],
-            aws_access_key_id=cfg['access_key'],
-            aws_secret_access_key=cfg['secret_key'],
-            config=cfg['botocore_config'],
-            region_name=cfg['region'],
-        )
-        return client, cfg['bucket']
+        client, bucket = get_r2_client()
+        return client, bucket
 
     def stage_image(self, *, pipeline_id, image_id):
         """Download a single AlbumImage to a temp file."""

@@ -3,10 +3,7 @@
 Each Account gets its own browser context with its own cookies and its pinned Proxy.
 Cookies are encrypted; never write secret values to logs.
 """
-import os
-import time
-import uuid as _uuid
-from contextlib import contextmanager
+from typing import List, Optional
 
 try:
     from playwright.sync_api import sync_playwright
@@ -19,24 +16,19 @@ class BrowserManagerError(Exception):
 
 
 class CookieCrypto:
-    """Encrypt/decrypt cookie blobs. Never expose plaintext cookies in logs."""
+    """Encrypt/decrypt cookie blobs using the existing Fernet key.
 
-    def __init__(self, key=None):
-        from cryptography.fernet import Fernet
-        self._fernet = Fernet(key or os.environ.get(
-            'FACEBOOK_COOKIE_ENCRYPTION_KEY',
-            Fernet.generate_key(),
-        ))
+    Uses the same FACEBOOK_COOKIE_FERNET_KEY as the FacebookAccount system.
+    Never logs plaintext cookies or decrypted values.
+    """
 
-    def encrypt(self, plaintext: str) -> str:
-        if not plaintext:
-            return ''
-        return self._fernet.encrypt(plaintext.encode('utf-8')).decode('ascii')
+    def __init__(self):
+        from modules.facebook_accounts.crypto import get_fernet
+        self._fernet = get_fernet()
 
-    def decrypt(self, ciphertext: str) -> str:
-        if not ciphertext:
-            return ''
-        return self._fernet.decrypt(ciphertext.encode('ascii')).decode('utf-8')
+    def noop(self) -> bool:
+        """Returns True if the crypto system is operational."""
+        return self._fernet is not None
 
 
 class BrowserManager:
@@ -51,14 +43,26 @@ class BrowserManager:
         self._playwright_ctx = None
         self._browser = None
 
-    @property
-    def _proxy_url(self):
-        return getattr(self, '_current_proxy_url', None)
+    def _proxy_server_url(self, proxy, account_bundle=None):
+        """Build a proxy and credentials if the proxy has auth."""
+        # Check if there are auth credentials
+        auth_secret = getattr(proxy, 'auth_secret', None)
+        if auth_secret:
+            from modules.proxies.crypto import decrypt_proxy_credentials
+            try:
+                username, password = decrypt_proxy_credentials(auth_secret.ciphertext)
+                return f'{proxy.protocol}://{username}:{password}@{proxy.host}:{proxy.port}'
+            except Exception:
+                logger.warning('Could not decrypt proxy credentials.')
+                # Fall through to URL without auth
+                pass
+        return f'{proxy.protocol}://{proxy.host}:{proxy.port}'
 
-    def _ensure_browser(self, proxy_url):
+    def _ensure_browser(self, proxy_url: Optional[str]):
         if sync_playwright is None:
             raise BrowserManagerError(
-                'playwright is not installed. Install with: pip install playwright && playwright install chromium'
+                'playwright is not installed. Install with: '
+                'pip install playwright && playwright install chromium'
             )
         if self._playwright_ctx is None:
             self._playwright_ctx = sync_playwright().start()
@@ -68,35 +72,13 @@ class BrowserManager:
                 launch_kwargs['proxy'] = {'server': proxy_url}
             self._browser = self._playwright_ctx.chromium.launch(**launch_kwargs)
         return self._browser
-
-    def __init_browser(self, proxy_url):
-        if sync_playwright is None:
-            raise BrowserManagerError(
-                'playwright is not installed.'
-            )
-        if self._playwright_ctx is None:
-            self._playwright_ctx = sync_playwright().start()
-        if self._browser is None:
-            launch_kwargs = {'headless': self._settings.playwright_headless}
-            if proxy_url:
-                launch_kwargs['proxy'] = {'server': proxy_url}
-            self._browser = self._playwright_ctx.chromium.launch(**launch_kwargs)
-        return self._browser
-
-    @property
-    def _proxy_url(self):
-        return getattr(self, '_current_proxy_url', None)
-
-    def __init_browser(self, proxy_url):
-        return self._ensure_browser(proxy_url)
 
     def launch_context(self, account_id, proxy_server=None):
         """Launch a new browser context for this Account.
 
         The context uses the Account's pinned Proxy to preserve IP affinity.
         """
-        self._current_proxy_url = proxy_server
-        browser = self.__init_browser(proxy_server)
+        browser = self._ensure_browser(proxy_server)
         context_options = {
             'viewport': {'width': 1280, 'height': 720},
             'user_agent': (
@@ -106,6 +88,79 @@ class BrowserManager:
             ),
         }
         return browser.new_context(**context_options)
+
+    def load_account_cookies(self, context, account):
+        """Load encrypted Facebook cookies from the existing system into the context.
+
+        Uses FacebookCookieSecret + crypto.decrypt_cookies.
+        Never writes decrypted cookie values to logs.
+        """
+        from modules.facebook_accounts.credentials import FacebookCookieSecret
+        from modules.facebook_accounts.crypto import decrypt_cookies
+
+        cookie_secret = getattr(account, 'cookie_secret', None)
+        if cookie_secret is None:
+            return False, 0  # No cookies stored
+
+        try:
+            cookies = decrypt_cookies(cookie_secret.ciphertext)
+        except Exception:
+            return False, 0  # Decryption failed; cookies may be stale
+
+        if not isinstance(cookies, list):
+            return False, 0
+
+        # Transform to Playwright cookie format
+        pw_cookies = []
+        for c in cookies:
+            pw_cookies.append({
+                'name': c.get('name', ''),
+                'value': c.get('value', ''),
+                'domain': c.get('domain', '.facebook.com'),
+                'path': c.get('path', '/'),
+                'secure': c.get('secure', True),
+                'httpOnly': c.get('httpOnly', False),
+                'sameSite': c.get('sameSite', 'Lax'),
+            })
+
+        context.add_cookies(pw_cookies)
+        return True, len(pw_cookies)
+
+    def verify_account_identity(self, page) -> bool:
+        """Verify the browser session is authenticated as the expected Account.
+
+        Checks the Facebook page for the account's profile link or name.
+        Does NOT expose cookie values or user IDs in logs.
+        """
+        try:
+            # Look for the profile image / account switcher indicator
+            page.goto('https://www.facebook.com/', timeout=30000)
+            page.wait_for_timeout(2000)
+
+            # Check if we're on the homepage (authenticated) vs login page
+            login_indicators = [
+                'input[name="email"]',
+                'input[name="pass"]',
+                '#loginbutton',
+            ]
+            for sel in login_indicators:
+                if page.query_selector(sel) is not None:
+                    return False  # Still on login page
+
+            # Check for the home feed (authenticated)
+            home_indicators = [
+                '[role="feed"]',
+                '[aria-label="Trang chủ"]',
+                '[aria-label="Home"]',
+                'div[data-testid="js_2"]',
+            ]
+            for sel in home_indicators:
+                if page.query_selector(sel) is not None:
+                    return True
+
+            return False
+        except Exception:
+            return False
 
     def close_context(self, context):
         if context is not None:
