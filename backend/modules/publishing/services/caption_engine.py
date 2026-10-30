@@ -292,7 +292,11 @@ def generate_job_caption(*, pipeline_id, job_id, actor=None):
             if row:
                 row.state = JobCaption.State.FAILED
                 row.generation_token = None
-                row.save(update_fields=['state', 'generation_token', 'updated_at'])
+                # Count failures via revisions so the tick can bound retries.
+                row.revision += 1
+                row.save(update_fields=['state', 'generation_token', 'revision',
+                                        'updated_at'])
+                _record_revision(row, 'generation_failed', None)
         raise
 
     with transaction.atomic():

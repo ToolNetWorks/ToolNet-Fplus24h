@@ -1,0 +1,22 @@
+[Unit]
+Description=ToolNet Fplus24h AI Caption Watch (auto-generate/auto-approve; NEVER Facebook)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/toolnet-group-publisher/backend
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/root/toolnet-group-publisher/backend/.env
+ExecStart=/root/toolnet-group-publisher/.venv/bin/python manage.py publishing_caption_tick --generate --watch --poll-seconds 60 --limit 5
+Restart=always
+RestartSec=15
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run ToolNet Fplus24h recovery tick every 5 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+Unit=toolnet-recovery-tick.service
+
+[Install]
+WantedBy=timers.target

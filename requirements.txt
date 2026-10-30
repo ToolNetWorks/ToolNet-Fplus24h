@@ -6,3 +6,6 @@ gunicorn>=23,<26
 whitenoise>=6.9,<7
 djangorestframework>=3.16,<4
 django-axes[ipware]>=8,<9
+boto3>=1.43,<2
+Pillow>=12,<13
+cryptography>=50,<51

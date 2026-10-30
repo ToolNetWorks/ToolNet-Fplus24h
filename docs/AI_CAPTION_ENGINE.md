@@ -27,24 +27,41 @@ The URL is an example of an OpenAI-compatible completion endpoint, not a claim t
 - CTV: Workspace → **AI viết Caption**. Add examples, generate/rewrite captions for queued Jobs, approve/reject each draft.
 - Scheduler: Creates Jobs as before, but when enabled they cannot progress to a worker/handoff until their caption has been approved. Caption Tick creates drafts automatically for new queued Jobs. No LLM network calls inside Scheduler transactions.
 
-## Tick: safe preview and opt-in generation
+## Automatic operation (24/7)
+
+The automatic caption pipeline runs as two independent services; neither ever posts to Facebook.
+
+| Unit | Cycle | Behavior |
+| --- | --- | --- |
+| `toolnet-scheduler-tick.service` | 30s | Enqueues due Jobs only (`facebook_dispatch_enabled: false`). |
+| `toolnet-caption-tick.service` | 60s | Scans every eligible Pipeline, generates + auto-approves captions (limit 5/tick). Retries `failed` after 900s, retries stale `generating` after 10min, max 3 failed revisions. Uses `flock /run/toolnet-caption-tick.lock`. |
+| `toolnet-recovery-tick.timer` | 5min | Resets captions stuck in `generating` >30min to `failed` (revision `generation_stale_reset`) and quarantines expired worker leases to `uncertain` (`WORKER_LEASE_EXPIRED`, no auto-retry). |
+
+Install and enable:
+
+```bash
+cp deploy/systemd/toolnet-caption-tick.service /etc/systemd/system/
+cp deploy/systemd/toolnet-recovery-tick.service deploy/systemd/toolnet-recovery-tick.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now toolnet-caption-tick.service
+systemctl enable --now toolnet-recovery-tick.timer
+```
+
+`toolnet-caption-tick.service` requires `TOOLNET_CAPTION_*` variables in the Django service environment (or `backend/.env`) and honors `TOOLNET_CAPTION_TIMEOUT` (default 120s). It is `Restart=always`; the scheduler is `Restart=on-failure`.
+
+### Manual one-shot commands
 
 ```bash
 cd /root/toolnet-group-publisher/backend
-../.venv/bin/python manage.py publishing_caption_tick --pipeline-id <UUID_PIPELINE> --limit 5
-../.venv/bin/python manage.py publishing_caption_tick --pipeline-id <UUID_PIPELINE> --generate --limit 5
+../.venv/bin/python manage.py publishing_caption_tick --generate --limit 5
+../.venv/bin/python manage.py publishing_caption_tick --generate --watch --poll-seconds 60 --limit 5
+../.venv/bin/python manage.py publishing_recovery_tick            # preview
+../.venv/bin/python manage.py publishing_recovery_tick --apply    # write recovery actions
 ```
 
-**Optional** per-Pipeline systemd timer. Do not enable until the AI API key is configured, the examples are uploaded and the exact destination is approved:
+`--pipeline-id` is optional: without it the tick scans all eligible Pipelines. `APPROVED` only means the caption is ready for handoff; the Facebook Groups adapter is fail-closed (`GROUPS_API_REMOVED_2024_04_22`), so nothing is published automatically.
 
-```bash
-cp deploy/systemd/toolnet-caption-tick@.* /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now toolnet-caption-tick@<UUID_PIPELINE>.timer
-systemctl list-timers 'toolnet-caption-tick*'
-```
-
-Tick **does not publish to Facebook** and does not backfill old drafts automatically. Manual `generate` permits retry of a failed/rejected draft. A live API endpoint must be available for actual AI text generation; a saved model name alone does not enable a provider.
+The older per-Pipeline `toolnet-caption-tick@.timer` template remains available for deployments that prefer one timer per Pipeline, but the watch service above replaces it for normal operation.
 
 ## Acceptance
 
@@ -60,7 +77,7 @@ Tick **does not publish to Facebook** and does not backfill old drafts automatic
 
 ## Known limitations
 
-- HTTP AI generation is a synchronous request, with a 25-second network timeout. The timer processes max 5 Jobs per run. It does not imply automatic Facebook posting.
+- HTTP AI generation is a synchronous request, with a 120-second network timeout (`TOOLNET_CAPTION_TIMEOUT`). The watch service processes max 5 Jobs per tick. Failed generations are retried after 15 minutes, up to 3 failed revisions. It does not imply automatic Facebook posting.
 - The Job list UI displays the most recent 50 Jobs. Caption examples are paginated 30 per page.
 - Model training is retrieval-guided prompting from examples, **not** fine-tuning.
 - The service does not inspect image content; it writes from examples and the Group name.

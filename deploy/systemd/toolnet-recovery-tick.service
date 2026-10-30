@@ -1,0 +1,17 @@
+[Unit]
+Description=ToolNet Fplus24h conservative recovery tick (stale captions, expired leases)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/toolnet-group-publisher/backend
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/root/toolnet-group-publisher/backend/.env
+ExecStart=/root/toolnet-group-publisher/.venv/bin/python manage.py publishing_recovery_tick --apply --limit 20
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
