@@ -422,30 +422,86 @@ Based on this analysis, the Worker should:
    - Check `if_viewer_can_see_anonymous_post_toggle_button`
    - Check `group_anonymous_post_info` presence
 
-3. **Upload image to Facebook CDN** first via `upload.facebook.com` before creating
-   the story, then pass the `uploadID` in the `attachments` field.
+3. **Upload image to Facebook CDN** using the browser's native file input — the
+   Worker should not bypass Facebook's own upload mechanism. The image is staged
+   locally (downloaded from R2), uploaded via simulated file selection, then
+   deleted from local temp after processing.
 
-4. **Set `composer_entry_point: "publisher_bar_anonymous_author"`** in the mutation
-   input to ensure anonymous posting.
+4. **Set anonymous posting mode** by enabling the anonymous post toggle in the
+   browser UI, not by constructing raw GraphQL variables.
 
-5. **Verify post creation** by fetching the story via `groupsCometFetchStoryQuery`
-   and checking for `post_id` presence.
+5. **Verify post creation** by checking the browser for the post's permalink URL
+   and confirming the `post_id` appears in the UI.
 
-6. **Distinguish published vs pending**:
-   - `post_id` present → post was created (may still be pending admin approval)
-   - `post_id` absent → post was not created (failure, CAPTCHA, or permission denied)
-   - Check `if_viewer_can_post_with_approval` from the composer init response to
-     determine if approval is required for this group.
+6. **Never treat `publishing_flow: FALLBACK` as a success indicator** — this is
+   an internal Facebook routing flag, not a confirmation of publication.
 
-7. **Never share sessions across accounts** — each Account must have its own browser
-   context with its own cookies and headers.
+7. **Never auto-join Groups** — the HAR does not show a join action; the posting
+   Account's membership status is not relevant to the anonymous posting flow.
 
-8. **Use the Proxy Pin** to route all browser traffic through the fixed proxy IP
-   assigned to each Account, preserving session affinity.
+8. **Preserve the fixed Proxy Pin** — each Account's browser session must route
+   through its assigned proxy endpoint to maintain IP affinity.
 
 ---
 
-## 8. Sensitive Data Handling
+## 8. Corrections to Phase 1 Conclusions
+
+The following corrections apply to the initial analysis:
+
+### 8.1 Post ID ≠ Published
+
+- The presence of `post_id` (in `data.story_create.group_feed_story_edge.node.post_id`
+  and `data.node.post_id` from the story fetch) only proves that Facebook **created**
+  a post object. It does **not** prove the post is publicly visible or has cleared
+  admin approval.
+- Facebook can return a 200 status with a `post_id` even when the post is held in
+  pending-admin-approval state.
+
+### 8.2 `ask_admin_to_post_for_user` Interpretation
+
+- `ask_admin_to_post_for_user.is_asking_admin_to_post=true` is a **signal** that may
+  relate to the admin-approval workflow, but it is **not sufficient** to determine
+  whether approval is required or has been granted.
+- This field should be recorded for context but must not be used as a sole indicator
+  of posting permission or approval status.
+
+### 8.3 `if_viewer_can_post_with_approval`
+
+- `if_viewer_can_post_with_approval=null` (observed in the HAR) does not prove the
+  post was approved, nor does it prove the account has direct posting permission.
+- This field must be checked alongside other indicators (`if_viewer_can_see_anonymous_post_toggle_button`,
+  `group_anonymous_post_info`) to determine the actual posting capability.
+
+### 8.4 Group Membership
+
+- The HAR contains **no evidence** about whether the posting Account was a member
+  or non-member of the target Group at the time of posting.
+- Facebook's anonymous posting flow does not require the composer to be a member.
+- **Do not infer** membership status from the HAR data.
+
+### 8.5 `publishing_flow: FALLBACK`
+
+- `publishing_flow: FALLBACK` is an internal Facebook routing indicator, not a
+  success state. It does not guarantee publication was completed or that the post
+  is visible.
+
+### 8.6 GraphQL API Reliability
+
+- The internal Facebook GraphQL endpoint (`/api/graphql/`) is **not an official API**.
+  The `fb_dtsg`, `__hsi`, `__comet_req`, and `__spin_*` tokens are dynamic and
+  session-specific. They cannot be reliably replayed without a valid browser session.
+- The Worker must use browser automation to interact with Facebook's UI.
+
+### 8.7 Photo Upload Response
+
+- The photo upload response contains `for (;;);` anti-XSS padding prefix.
+- The `uploadID` field is used to reference the uploaded photo in the subsequent
+  story creation mutation. However, the Worker will use browser-native file
+  upload rather than replaying this request.
+
+---
+
+## 9. Sensitive Data Handling
 
 This analysis was performed with the following safeguards:
 - All cookies, tokens, CSRF values, user IDs, session IDs, and page tokens were
