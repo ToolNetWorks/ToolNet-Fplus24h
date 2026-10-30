@@ -24,7 +24,7 @@ class PipelineSchedule(models.Model):
     timezone_name = models.CharField(max_length=64, default='Asia/Ho_Chi_Minh')
     start_at = models.DateTimeField()
     next_run_at = models.DateTimeField()
-    caption_template = models.TextField(max_length=5000)
+    caption_template = models.TextField(max_length=5000, blank=True, default='')
     require_anonymous = models.BooleanField(default=True)
     require_nonmember = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -44,8 +44,14 @@ class PipelineSchedule(models.Model):
         self.name = (self.name or '').strip()
         if not self.name:
             raise ValidationError({'name': 'Tên lịch đăng không được trống.'})
-        if not isinstance(self.caption_template, str) or not self.caption_template.strip():
+        
+        # If pipeline has AI Caption enabled with auto_approve, make caption_template optional
+        if not self.caption_template.strip() and not self._has_ai_caption_enabled():
             raise ValidationError({'caption_template': 'Cần caption/mẫu caption đã duyệt.'})
+        
+        if not isinstance(self.caption_template, str) or not self.caption_template.strip():
+            raise ValidationError({'caption_template': 'Cần caption/mẫu caption có nội dung.'})
+        
         try:
             ZoneInfo(self.timezone_name)
         except (ZoneInfoNotFoundError, ValueError, TypeError):
@@ -55,6 +61,14 @@ class PipelineSchedule(models.Model):
             raise ValidationError({'start_at': 'Cần datetime có múi giờ.'})
         if not self.next_run_at or timezone.is_naive(self.next_run_at):
             raise ValidationError({'next_run_at': 'Cần datetime có múi giờ.'})
+
+    def _has_ai_caption_enabled(self) -> bool:
+        """Check if pipeline has AI Caption enabled with auto_approve."""
+        return (
+            getattr(self.pipeline, 'caption_settings', None) is not None and
+            getattr(self.pipeline.caption_settings, 'auto_generate', False) and
+            getattr(self.pipeline.caption_settings, 'auto_approve', False)
+        )
 
     def save(self, *args, **kwargs):
         self.full_clean()

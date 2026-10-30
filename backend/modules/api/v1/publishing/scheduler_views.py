@@ -32,7 +32,7 @@ class ScheduleSerializer(serializers.Serializer):
     max_groups_per_run = serializers.IntegerField(min_value=1, max_value=50, default=10)
     timezone_name = serializers.CharField(max_length=64, default='Asia/Ho_Chi_Minh')
     start_at = serializers.DateTimeField()
-    caption_template = serializers.CharField(max_length=5000, allow_blank=False)
+    caption_template = serializers.CharField(max_length=5000, allow_blank=True, required=False)
     require_anonymous = serializers.BooleanField(default=True)
     require_nonmember = serializers.BooleanField(default=True)
     enabled = serializers.BooleanField(default=False)
@@ -45,6 +45,19 @@ class ScheduleSerializer(serializers.Serializer):
             raise serializers.ValidationError({'enabled': 'Phải là boolean.'})
         if attrs.get('start_at') and attrs['start_at'] > timezone.now() + timedelta(days=366):
             raise serializers.ValidationError({'start_at': 'Tối đa 366 ngày trong tương lai.'})
+        # Check if AI caption is enabled for this pipeline
+        request = self.context.get('request')
+        pipeline_id = self.context.get('pipeline_id')
+        if pipeline_id and request:
+            from modules.publishing.caption_models import PipelineCaptionSettings
+            caption_settings = PipelineCaptionSettings.objects.filter(pipeline_id=pipeline_id).first()
+            ai_enabled = caption_settings and caption_settings.enabled and caption_settings.auto_generate and caption_settings.auto_approve
+            if not ai_enabled and not attrs.get('caption_template', '').strip():
+                raise serializers.ValidationError({'caption_template': 'Cần caption/mẫu caption đã duyệt.'})
+            if ai_enabled and not attrs.get('caption_template', '').strip():
+                attrs['caption_template'] = ''
+        elif not attrs.get('caption_template', '').strip():
+            raise serializers.ValidationError({'caption_template': 'Cần caption/mẫu caption đã duyệt.'})
         return attrs
 
 
@@ -126,7 +139,7 @@ class PipelineScheduleListCreateAPIView(APIView):
 
     def post(self, request, pipeline_id):
         pipeline = resolve_pipeline(request.user, pipeline_id)
-        inp = ScheduleSerializer(data=request.data)
+        inp = ScheduleSerializer(data=request.data, context={'request': request, 'pipeline_id': pipeline_id})
         inp.is_valid(raise_exception=True)
         values = inp.validated_data
         # Explicitly disabled at creation; a later enable action is intentional.
@@ -150,7 +163,7 @@ class PipelineScheduleDetailAPIView(APIView):
 
     def patch(self, request, pipeline_id, schedule_id):
         pipeline = resolve_pipeline(request.user, pipeline_id)
-        form = ScheduleSerializer(data=request.data, partial=True)
+        form = ScheduleSerializer(data=request.data, partial=True, context={'request': request, 'pipeline_id': pipeline_id})
         form.is_valid(raise_exception=True)
         data = form.validated_data
         if not data:

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Eye, History, Plus, RefreshCw, Save, ShieldAlert, ShieldCheck } from "lucide-react";
 import { searchFacebookAccounts, type ProxyAccount } from "../api/proxies";
 import { listGroups, type FacebookGroup } from "@/features/facebook-groups/api/groups";
+import { captionAPI, type CaptionConfig } from "../api/caption-engine";
 import {
   createSchedule, listSchedules, updateSchedule, previewSchedule, runSchedule,
   listScheduleBatches, listEligibilities, saveEligibility,
@@ -47,13 +48,16 @@ function fromSchedule(row: PipelineSchedule): FormSchedule {
     require_anonymous: row.require_anonymous, require_nonmember: row.require_nonmember,
   };
 }
-function serializeDraft(draft: FormSchedule): ScheduleWrite {
+
+
+function serializeDraft(draft: FormSchedule, captionConfig: CaptionConfig | null): ScheduleWrite {
+  const aiEnabled = captionConfig?.enabled && captionConfig?.auto_generate && captionConfig?.auto_approve;
   return {
     name: draft.name.trim(), enabled: draft.enabled,
     interval_minutes: draft.interval_minutes, max_groups_per_run: draft.max_groups_per_run,
     timezone_name: draft.timezone_name.trim(),
     start_at: new Date(draft.start_at_local).toISOString(),
-    caption_template: draft.caption_template.trim(),
+    caption_template: aiEnabled ? '' : draft.caption_template.trim(),
     // Both requirements are deliberately mandatory in this CTV workflow.
     require_anonymous: true, require_nonmember: true,
   };
@@ -113,6 +117,10 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
   const [healthCode, setHealthCode] = useState("");
   const [healthEvidence, setHealthEvidence] = useState("");
   const [reviewAt, setReviewAt] = useState("");
+  const [captionConfig, setCaptionConfig] = useState<CaptionConfig | null>(null);
+  const [captionConfigLoading, setCaptionConfigLoading] = useState(false);
+
+  const aiCaptionEnabled = captionConfig?.enabled && captionConfig?.auto_generate && captionConfig?.auto_approve;
 
   const selected = schedules.find((row) => row.id === selectedId) ?? null;
   const original = selected ? fromSchedule(selected) : newForm();
@@ -156,15 +164,22 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
   }, [selectedId, creating]);
 
   useEffect(() => {
-    if (!selectedId || view !== "batches") return;
-    let live = true;
-    setLoadingBatches(true);
-    listScheduleBatches(pipelineId, selectedId)
-      .then((rows) => { if (live) setBatches(rows); })
-      .catch((cause: unknown) => { if (live) setError(errorText(cause)); })
-      .finally(() => { if (live) setLoadingBatches(false); });
-    return () => { live = false; };
-  }, [pipelineId, selectedId, view, revision]);
+    const controller = new AbortController();
+    setCaptionConfigLoading(true);
+    captionAPI.settings(pipelineId)
+      .then((cfg) => {
+        if (controller.signal.aborted) return;
+        setCaptionConfig(cfg);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setCaptionConfig(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCaptionConfigLoading(false);
+      });
+    return () => controller.abort();
+  }, [pipelineId]);
 
   useEffect(() => {
     if (view !== "eligibility" && view !== "health") return;
@@ -229,14 +244,20 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft || working) return;
-    if (!draft.name.trim() || !draft.caption_template.trim()) {
-      setError("Cần tên lịch và mẫu caption có nội dung."); return;
+    if (!draft.name.trim()) {
+      setError("Cần tên lịch.");
+      return;
+    }
+    if (!aiCaptionEnabled && !draft.caption_template.trim()) {
+      setError("Cần mẫu caption đã duyệt.");
+      return;
     }
     if (!draft.start_at_local || !Number.isFinite(new Date(draft.start_at_local).getTime())) {
-      setError("Thời điểm bắt đầu không hợp lệ."); return;
+      setError("Thời điểm bắt đầu không hợp lệ.");
+      return;
     }
     if (!creating && !selected) return;
-    const payload = serializeDraft(draft);
+    const payload = serializeDraft(draft, captionConfig);
     setWorking(true); setError(""); setNotice("");
     try {
       let saved: PipelineSchedule;
@@ -247,7 +268,7 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
         // Avoid sending unchanged start_at: the backend disallows changing it
         // after batches have been created, even when the value is identical.
         const changes: Partial<ScheduleWrite> = {};
-        const current = serializeDraft(original);
+        const current = serializeDraft(original, captionConfig);
         for (const key of Object.keys(payload) as (keyof ScheduleWrite)[]) {
           if (payload[key] !== current[key] || ((key === "require_anonymous" || key === "require_nonmember") && selected?.[key] !== true)) {
             Object.assign(changes, { [key]: payload[key] });
@@ -441,8 +462,12 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
                 <div><CheckCircle2 size={14} className="mr-1 inline text-green-600"/> Không tham gia Group: bắt buộc</div>
               </div>
             </div>
-            <label className={labelClass}>Mẫu caption đã duyệt<textarea required rows={4} maxLength={5000} className={inputClass} value={draft.caption_template} onChange={(e) => setField("caption_template", e.target.value)} placeholder="Nội dung {group_name} ngày {date}" />
-              <span className="text-[11px] font-normal text-slate-500">Biến hỗ trợ: {"{group_name}"}, {"{date}"}. AI tự viết caption thuộc bước riêng.</span></label>
+            {!aiCaptionEnabled && <label className={labelClass}>Mẫu caption đã duyệt<textarea required rows={4} maxLength={5000} className={inputClass} value={draft.caption_template} onChange={(e) => setField("caption_template", e.target.value)} placeholder="Nội dung {group_name} ngày {date}" />
+              <span className="text-[11px] font-normal text-slate-500">Biến hỗ trợ: {"{group_name}"}, {"{date}"}. AI tự viết caption thuộc bước riêng.</span></label>}
+            {aiCaptionEnabled && <div className="space-y-2 rounded-md border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+              <div className="flex items-center gap-2 font-semibold"><CheckCircle2 size={14}/> AI Caption Engine được bật</div>
+              <p>Caption sẽ được AI tạo và tự duyệt dựa trên kho mẫu của Pipeline. Không cần nhập mẫu caption thủ công.</p>
+            </div>}
             <p className="text-xs text-slate-500">{creating ? "Lịch mới luôn được tạo ở trạng thái Tắt." : `Lịch đã lưu: ${timeLabel(selected?.updated_at)} · Lượt tiếp theo: ${timeLabel(selected?.next_run_at)}`}</p>
           </form>}
           {scheduleIsSaved && <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
