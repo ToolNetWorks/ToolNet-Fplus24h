@@ -155,6 +155,7 @@ export async function uploadAlbumImages(
   pipelineId: string,
   albumId: string,
   files: File[],
+  onProgress?: (progress: number, uploadId?: string) => void,
 ): Promise<AlbumImage[]> {
   if (files.length < 1 || files.length > 5) {
     throw new Error("Chọn từ 1 đến 5 ảnh.");
@@ -177,6 +178,9 @@ export async function uploadAlbumImages(
     form.append("files", file);
   }
   const csrfToken = await getCsrfToken();
+  
+  // For progress tracking, we need to use a different approach since FormData doesn't support progress events
+  // We'll handle this client-side with polling or we can pass a custom upload function
   const response = await fetch(
     imagesUrl(pipelineId, albumId),
     {

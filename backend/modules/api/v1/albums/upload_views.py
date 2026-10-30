@@ -84,6 +84,18 @@ class AlbumImageUploadAPIView(APIView):
                 "success": False,
                 "message": "Không thể lưu ảnh. Vui lòng thử lại.",
             }, status=502)
+        except Exception as exc:
+            logger.exception(
+                "Unexpected album upload error",
+                extra={
+                    "pipeline_id": str(pipeline.pk),
+                    "album_id": str(album_id),
+                },
+            )
+            return Response({
+                "success": False,
+                "message": f"Lỗi không xác định: {str(exc)}",
+            }, status=500)
         response = Response({
             "success": True,
             "message": f"Đã upload {len(records)} ảnh.",
