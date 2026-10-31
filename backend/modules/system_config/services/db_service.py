@@ -1,3 +1,4 @@
+import dj_database_url
 import time
 from typing import Dict, Any, Optional
 
