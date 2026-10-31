@@ -1,11 +1,8 @@
-import re
 import time
-from urllib.parse import urlparse
 from typing import Dict, Any, Optional
 
-import dj_database_url
 from django.conf import settings
-from django.db import connection, connections
+from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 
 from ..crypto import sanitize_text
@@ -14,7 +11,6 @@ from ..crypto import sanitize_text
 def _extract_region_from_host(host: str) -> str:
     if not host:
         return ""
-    # E.g. ep-quiet-grass-....ap-southeast-1.aws.neon.tech
     parts = host.split(".")
     for i, p in enumerate(parts):
         if p in ("aws", "neon") and i > 0:
@@ -23,14 +19,11 @@ def _extract_region_from_host(host: str) -> str:
 
 
 def get_database_status() -> Dict[str, Any]:
-    """Retrieve actual connection, pool stats, and migration status for primary Neon database."""
+    """Retrieve actual connection, pool stats, and migration status for primary Neon database.
+    Returns only essential metrics for dashboard display - no sensitive infrastructure details.
+    """
     db_config = settings.DATABASES.get("default", {})
     host = db_config.get("HOST", "")
-    database_name = db_config.get("NAME", "")
-    user = db_config.get("USER", "")
-    port = db_config.get("PORT", "5432")
-    engine = db_config.get("ENGINE", "")
-
     region = _extract_region_from_host(host)
 
     start = time.monotonic()
@@ -75,7 +68,7 @@ def get_database_status() -> Dict[str, Any]:
         connection_status = "error"
         error_msg = "Không truy vấn được dịch vụ; kiểm tra kết nối và quyền truy cập."
 
-    # Migration inspection
+    # Migration inspection - use Django's migrate --plan equivalent check
     migration_info = {
         "total_migrations": 0,
         "applied_migrations": 0,
@@ -96,32 +89,17 @@ def get_database_status() -> Dict[str, Any]:
     except Exception as e:
         migration_info["error"] = "Không truy vấn được dịch vụ; kiểm tra kết nối và quyền truy cập."
 
+    # Return only dashboard-essential data - no host, database_name, user, port, engine, pool internals
     return {
-        "provider": "Neon PostgreSQL (Serverless)",
-        "active_alias": "default",
-        "engine": engine,
-        "host": host,
-        "database_name": database_name,
-        "user": user,
+        "provider": "Neon PostgreSQL",
         "region": region,
-        "port": port,
-        "sslmode": "require",
         "connection_status": connection_status,
         "latency_ms": latency_ms,
         "last_error": error_msg,
-        "pool_info": {
-            "server_version": server_version,
-            "active_connections": active_connections,
-            "max_connections": max_connections,
-            "database_size": database_size,
-        },
-        "migrations": migration_info,
-        "is_bootstrap": True,
-        "safe_to_change_runtime": False,
-        "bootstrap_notice": (
-            "DATABASE_URL là cấu hình bootstrap của hệ thống, được nạp lúc khởi động dịch vụ. "
-            "Để bảo vệ dữ liệu sản xuất, hệ thống không tự thay đổi DATABASE_URL qua form lưu thông thường."
-        ),
+        "database_size": database_size,
+        "migrations_pending": migration_info.get("pending_migrations", 0),
+        "migrations_synced": migration_info.get("is_synced", True),
+        "checked_at": time.time(),
     }
 
 
@@ -186,8 +164,6 @@ def test_database_connection(test_url: Optional[str] = None) -> Dict[str, Any]:
             "success": True,
             "latency_ms": latency_ms,
             "server_version": ver,
-            "host": parsed_config.get("HOST"),
-            "database_name": parsed_config.get("NAME"),
             "message": "Kết nối thử nghiệm thành công (không áp dụng vào production).",
         }
     except Exception as e:

@@ -28,3 +28,167 @@
 
 .r2Areas { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .r2Areas button[aria-pressed=true] { color: #1d4ed8; background: #eff6ff; border-color: #a6c4fa; }
+
+/* System Services Dashboard Styles */
+.systemServicesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+  margin: 20px 0;
+}
+
+.serviceCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  background: white;
+  transition: all 0.2s ease;
+}
+
+.serviceCard:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.serviceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.serviceName {
+  font-size: 16px;
+  font-weight: 600;
+  color: #172033;
+  margin: 0;
+}
+
+.statusIconWrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.statusIcon.healthy {
+  background: #10b981;
+}
+
+.statusIcon.error {
+  background: #ef4444;
+}
+
+.statusIcon.degraded {
+  background: #f59e0b;
+}
+
+.statusIcon.unknown {
+  background: #9ca3af;
+}
+
+.statusInfo {
+  margin-top: 12px;
+}
+
+.statusLabel {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.statusValue {
+  font-size: 15px;
+  font-weight: 600;
+  color: #172033;
+}
+
+.statusVietnamese {
+  font-size: 13px;
+  color: #475569;
+  margin-top: 4px;
+}
+
+.errorText {
+  color: #dc2626;
+  font-size: 12px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #fef2f2;
+  border-radius: 6px;
+}
+
+.lastHeartbeat {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 8px;
+}
+
+.refreshButton {
+  margin-top: 20px;
+  padding: 10px 20px;
+  background: #1d4ed8;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.refreshButton:hover {
+  background: #1e40af;
+}
+
+.refreshButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dashboard styles */
+.dashboard {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin: 20px 0;
+}
+.dashboard .metric {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dashboard .metric span:first-child {
+  font-size: 13px;
+  color: #64748b;
+}
+.dashboard .metric strong {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 6px;
+  display: inline-block;
+}
+.dashboard .metric .connected {
+  color: #16a34a;
+  background: #f0fdf4;
+}
+.dashboard .metric .error {
+  color: #dc2626;
+  background: #fef2f2;
+}
+.dashboard .metric .unknown {
+  color: #ca8a04;
+  background: #fef3c7;
+}

@@ -61,9 +61,76 @@ export default function AIConfig() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void Promise.all([aiAPI<Catalog>('registry', 'GET', undefined, controller.signal), aiAPI<Provider[]>('providers', 'GET', undefined, controller.signal), aiAPI<Route[]>('routes', 'GET', undefined, controller.signal)])
-      .then(([registry, list, routing]) => { if (!controller.signal.aborted) { setCatalog(registry); setProviders(list); setRoutes(routing); setSelected(current => current || list[0]?.id || ''); setLoading(false); } })
-      .catch(e => { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : 'Không tải được cấu hình.'); setLoading(false); } });
+    const promises = [];
+    
+    // Load registry with error handling
+    promises.push(
+      aiAPI<Catalog>('registry', 'GET', undefined, controller.signal)
+        .then(registry => {
+          if (!controller.signal.aborted) {
+            setCatalog(registry);
+          }
+          return registry;
+        })
+        .catch(e => {
+          if (!controller.signal.aborted) {
+            setError(e instanceof Error ? e.message : 'Không tải được registry cấu hình.');
+          }
+          return null;
+        })
+    );
+    
+    // Load providers with error handling  
+    promises.push(
+      aiAPI<Provider[]>('providers', 'GET', undefined, controller.signal)
+        .then(providers => {
+          if (!controller.signal.aborted) {
+            setProviders(providers);
+            if (providers && providers.length > 0 && !selected) {
+              setSelected(providers[0].id);
+            }
+          }
+          return providers;
+        })
+        .catch(e => {
+          if (!controller.signal.aborted) {
+            setError(e instanceof Error ? e.message : 'Không tải được danh sách Provider.');
+          }
+          return [];
+        })
+    );
+    
+    // Load routes with error handling
+    promises.push(
+      aiAPI<Route[]>('routes', 'GET', undefined, controller.signal)
+        .then(routes => {
+          if (!controller.signal.aborted) {
+            setRoutes(routes);
+          }
+          return routes;
+        })
+        .catch(e => {
+          if (!controller.signal.aborted) {
+            setError(e instanceof Error ? e.message : 'Không tải được tuyến định tuyến.');
+          }
+          return [];
+        })
+    );
+    
+    // Execute all promises in parallel
+    Promise.all(promises)
+      .then(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      })
+      .catch(e => {
+        if (!controller.signal.aborted) {
+          setError(e instanceof Error ? e.message : 'Có lỗi xảy ra khi tải cấu hình.');
+          setLoading(false);
+        }
+      });
+    
     return () => controller.abort();
   }, [refresh]);
 

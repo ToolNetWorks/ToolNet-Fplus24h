@@ -64,9 +64,24 @@ class ConfigAPIView(APIView):
         try:
             with transaction.atomic():
                 return super().dispatch(request, *args, **kwargs)
-        except Exception:
-            logger.error("System configuration operation failed; transaction rolled back")
-            return __import__("django.http", fromlist=["JsonResponse"]).JsonResponse({"error": "Không thể thực hiện thao tác cấu hình. Vui lòng thử lại."}, status=503)
+        except Exception as e:
+            logger.error(
+                "System configuration operation failed; transaction rolled back",
+                exc_info=True,
+                extra={
+                    "error_type": type(e).__name__,
+                    "request_path": request.path,
+                    "method": request.method,
+                    "user_id": getattr(request.user, "id", None),
+                    "has_secrets": any(
+                        hasattr(request, k) and isinstance(getattr(request, k), str)
+                        for k in ("body", "data")
+                    ),
+                },
+            )
+            return __import__("django.http", fromlist=["JsonResponse"]).JsonResponse(
+                {"error": "Không thể thực hiện thao tác cấu hình. Vui lòng thử lại."}, status=503
+            )
 
 
 # ==============================================================================
@@ -89,7 +104,7 @@ class DatabaseConfigAPIView(ConfigAPIView):
             request,
             section="database",
             action="test_connection",
-            target_name=result.get("database_name", "Current DB"),
+            target_name="Current DB" if not test_url else "Test URL",
             details={
                 "success": result.get("success"),
                 "latency_ms": result.get("latency_ms"),
