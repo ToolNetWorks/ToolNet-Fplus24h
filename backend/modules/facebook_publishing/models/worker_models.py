@@ -27,6 +27,11 @@ class WorkerResultState(models.TextChoices):
     UNCERTAIN = 'uncertain', 'Uncertain'
 
 
+class ConnectionMode(models.TextChoices):
+    DIRECT = 'direct', 'Direct connection (no proxy)'
+    PROXY = 'proxy', 'Via pinned proxy'
+
+
 class WorkerConfig(models.Model):
     """Per-Pipeline Facebook Publishing Worker enablement and dry-run flag."""
 
@@ -41,6 +46,12 @@ class WorkerConfig(models.Model):
     dry_run = models.BooleanField(
         default=True,
         help_text='Validate everything but never click Post or create a real post.',
+    )
+    connection_mode = models.CharField(
+        max_length=10,
+        choices=ConnectionMode.choices,
+        default=ConnectionMode.PROXY,
+        help_text='DIRECT: connect directly via VPS IP; PROXY: use pinned proxy.',
     )
     browser_timeout_seconds = models.PositiveIntegerField(
         default=120, validators=[MinValueValidator(10), ],

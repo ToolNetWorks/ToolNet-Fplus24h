@@ -133,7 +133,7 @@ def resolve_account_bundle(*, pipeline_id, account_id, group_id, worker_id,
             f'Group {group_id} not found, disabled, or not in Pipeline {pipeline_id}.'
         )
 
-    pin = AccountProxyPin.objects.select_related('proxy').filter(
+    pin = AccountProxyPin.objects.select_related('proxy__auth_secret').filter(
         pipeline_id=pipeline_id, account_id=account_id,
     ).first()
     if pin is None:

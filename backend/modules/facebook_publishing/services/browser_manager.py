@@ -3,7 +3,7 @@
 Each Account gets its own browser context with its own cookies and its pinned Proxy.
 Cookies are encrypted; never write secret values to logs.
 """
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 try:
     from playwright.sync_api import sync_playwright
@@ -31,6 +31,44 @@ class CookieCrypto:
         return self._fernet is not None
 
 
+def _build_proxy_config(proxy) -> Optional[Dict[str, Any]]:
+    """Build Playwright proxy configuration with separate username/password fields.
+
+    Uses Playwright's native proxy config format:
+    {
+        "server": "http://host:port",
+        "username": "user",
+        "password": "pass"
+    }
+    """
+    if proxy is None:
+        return None
+
+    # Build server URL without credentials
+    server_url = f"{proxy.protocol}://{proxy.host}:{proxy.port}"
+
+    # Check for auth credentials
+    auth_secret = getattr(proxy, 'auth_secret', None)
+    if auth_secret:
+        from modules.proxies.crypto import decrypt_proxy_credentials
+        try:
+            creds = decrypt_proxy_credentials(auth_secret.ciphertext)
+            # creds is a dict with username and password
+            return {
+                "server": server_url,
+                "username": creds.get("username", ""),
+                "password": creds.get("password", ""),
+            }
+        except Exception:
+            # Don't log credentials, just warn
+            import logging
+            logging.getLogger(__name__).warning('Could not decrypt proxy credentials for %s', proxy.pk)
+            # Fall through to no-auth config
+            pass
+
+    return {"server": server_url}
+
+
 class BrowserManager:
     """Manages isolated browser contexts per Account.
 
@@ -43,22 +81,7 @@ class BrowserManager:
         self._playwright_ctx = None
         self._browser = None
 
-    def _proxy_server_url(self, proxy, account_bundle=None):
-        """Build a proxy and credentials if the proxy has auth."""
-        # Check if there are auth credentials
-        auth_secret = getattr(proxy, 'auth_secret', None)
-        if auth_secret:
-            from modules.proxies.crypto import decrypt_proxy_credentials
-            try:
-                username, password = decrypt_proxy_credentials(auth_secret.ciphertext)
-                return f'{proxy.protocol}://{username}:{password}@{proxy.host}:{proxy.port}'
-            except Exception:
-                logger.warning('Could not decrypt proxy credentials.')
-                # Fall through to URL without auth
-                pass
-        return f'{proxy.protocol}://{proxy.host}:{proxy.port}'
-
-    def _ensure_browser(self, proxy_url: Optional[str]):
+    def _ensure_browser(self, proxy_config: Optional[Dict[str, Any]]):
         if sync_playwright is None:
             raise BrowserManagerError(
                 'playwright is not installed. Install with: '
@@ -68,17 +91,17 @@ class BrowserManager:
             self._playwright_ctx = sync_playwright().start()
         if self._browser is None:
             launch_kwargs = {'headless': self._settings.playwright_headless}
-            if proxy_url:
-                launch_kwargs['proxy'] = {'server': proxy_url}
+            if proxy_config:
+                launch_kwargs['proxy'] = proxy_config
             self._browser = self._playwright_ctx.chromium.launch(**launch_kwargs)
         return self._browser
 
-    def launch_context(self, account_id, proxy_server=None):
+    def launch_context(self, proxy_config: Optional[Dict[str, Any]] = None):
         """Launch a new browser context for this Account.
 
         The context uses the Account's pinned Proxy to preserve IP affinity.
         """
-        browser = self._ensure_browser(proxy_server)
+        browser = self._ensure_browser(proxy_config)
         context_options = {
             'viewport': {'width': 1280, 'height': 720},
             'user_agent': (

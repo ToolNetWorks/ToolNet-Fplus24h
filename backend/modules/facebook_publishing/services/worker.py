@@ -157,18 +157,20 @@ def claim_job(*, pipeline_id, worker_id, lease_seconds=600):
     job_snapshot = claim['job']
     from modules.publishing.models import PublishingJob
     job = PublishingJob.objects.select_related(
-        'facebook_account', 'facebook_account__assigned_proxy',
+        'facebook_account', 'facebook_account__assigned_proxy__auth_secret',
         'facebook_account__cookie_secret',
         'facebook_group',
     ).get(pk=job_snapshot['id'], pipeline_id=pipeline_id)
 
-    # Resolve the proxy for the account to attach to WorkerPublishJob
-    proxy = getattr(job.facebook_account, 'assigned_proxy', None)
-    if proxy is None:
-        from modules.proxies.models import ProxyEndpoint
-        proxy = ProxyEndpoint.objects.filter(
-            account_id=job.facebook_account_id, pipeline_id=pipeline_id,
-        ).first()
+    # Resolve the proxy for the account only if using PROXY mode
+    proxy = None
+    if settings.use_proxy:
+        proxy = getattr(job.facebook_account, 'assigned_proxy', None)
+        if proxy is None:
+            from modules.proxies.models import ProxyEndpoint
+            proxy = ProxyEndpoint.objects.select_related('auth_secret').filter(
+                account_id=job.facebook_account_id, pipeline_id=pipeline_id,
+            ).first()
 
     worker_job = _create_publish_job_record(
         pipeline_id=pipeline_id, job=job, worker_id=worker_id,
@@ -208,22 +210,71 @@ def prepare_session(claim_result, settings: WorkerSettings):
         to_state=WorkerResultState.PREPARING,
     )
 
-    # Step 1a: Validate Account/Proxy binding
-    try:
-        bundle = resolve_account_bundle(
-            pipeline_id=pipeline_id,
-            account_id=job.facebook_account_id,
-            group_id=job.facebook_group_id,
-            worker_id=claim_result['audit']._worker_id,
-            settings=settings,
+    # Step 1a: Validate Account/Proxy binding (only if using PROXY mode)
+    bundle = None
+    if settings.use_proxy:
+        try:
+            bundle = resolve_account_bundle(
+                pipeline_id=pipeline_id,
+                account_id=job.facebook_account_id,
+                group_id=job.facebook_group_id,
+                worker_id=claim_result['audit']._worker_id,
+                settings=settings,
+            )
+        except AccountProxyBindingError as exc:
+            audit.log_error('ACCOUNT_PROXY_BINDING_FAILED', str(exc))
+            worker_job.state = WorkerResultState.FAILED
+            worker_job.error_code = 'ACCOUNT_PROXY_BINDING_FAILED'
+            worker_job.error_detail = str(exc)[:2000]
+            worker_job.save(update_fields=['state', 'error_code', 'error_detail'])
+            raise WorkerError(f'Account/Proxy validation failed: {exc}') from exc
+    else:
+        # DIRECT mode: create a minimal bundle without proxy validation
+        from modules.facebook_accounts.models import FacebookAccount
+        from modules.facebook_groups.models import FacebookGroup
+        from modules.publishing.scheduler_models import AccountGroupEligibility
+        from django.utils import timezone
+        from modules.facebook_publishing.services.account_binding import AccountBundle, _count_encrypted_cookies
+
+        account = FacebookAccount.objects.select_related('cookie_secret').filter(
+            pk=job.facebook_account_id, pipeline_id=pipeline_id,
+            connection_status=FacebookAccount.ConnectionStatus.CONNECTED,
+        ).first()
+        if account is None:
+            raise WorkerError(
+                f'Account {job.facebook_account_id} not found, not CONNECTED, or not in Pipeline {pipeline_id}.'
+            )
+
+        group = FacebookGroup.objects.filter(
+            pk=job.facebook_group_id, pipeline_id=pipeline_id, is_enabled=True,
+        ).first()
+        if group is None:
+            raise WorkerError(
+                f'Group {job.facebook_group_id} not found, disabled, or not in Pipeline {pipeline_id}.'
+            )
+
+        now = timezone.now()
+        eligibility = AccountGroupEligibility.objects.filter(
+            pipeline_id=pipeline_id, account_id=account.pk, group_id=group.pk,
+            state=AccountGroupEligibility.State.VERIFIED,
+            can_post_anonymous=True,
+            verified_at__lte=now, expires_at__gt=now,
+        ).first()
+        is_anonymous_enabled = eligibility is not None and eligibility.can_post_anonymous
+
+        from modules.facebook_publishing.services.account_binding import _count_encrypted_cookies
+        has_cookies, cookie_count = _count_encrypted_cookies(account.pk)
+
+        bundle = AccountBundle(
+            account_id=account.pk,
+            account=account,
+            proxy=None,
+            pin=None,
+            proxy_server_url='',
+            encrypted_cookies_count=cookie_count,
+            has_cookies=has_cookies,
+            is_anonymous_enabled=is_anonymous_enabled,
         )
-    except AccountProxyBindingError as exc:
-        audit.log_error('ACCOUNT_PROXY_BINDING_FAILED', str(exc))
-        worker_job.state = WorkerResultState.FAILED
-        worker_job.error_code = 'ACCOUNT_PROXY_BINDING_FAILED'
-        worker_job.error_detail = str(exc)[:2000]
-        worker_job.save(update_fields=['state', 'error_code', 'error_detail'])
-        raise WorkerError(f'Account/Proxy validation failed: {exc}') from exc
 
     # Step 1b: Check Group eligibility (anonymous required, membership ANY)
     eligibility = check_group_eligibility(
@@ -377,11 +428,13 @@ def launch_browser(session, settings: WorkerSettings) -> BrowserManager:
     """
     browser_mgr = BrowserManager(settings)
     try:
-        proxy_url = session.bundle.proxy_server_url if session.bundle else None
-        context = browser_mgr.launch_context(
-            account_id=str(session.bundle.account_id),
-            proxy_server=proxy_url,
-        )
+        # Build proxy config with credentials for Playwright
+        proxy_config = None
+        if session.bundle and session.bundle.proxy:
+            from modules.facebook_publishing.services.browser_manager import _build_proxy_config
+            proxy_config = _build_proxy_config(session.bundle.proxy)
+
+        context = browser_mgr.launch_context(proxy_config=proxy_config)
 
         # Load encrypted cookies from the existing system
         cookies_loaded, cookie_count = browser_mgr.load_account_cookies(
