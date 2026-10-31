@@ -241,16 +241,19 @@ class SystemConfigTests(TestCase):
         p2.set_api_key("sk-fake-key-2")
         p2.save()
 
-        with patch("modules.system_config.services.adapters.openai_adapter.OpenAICompatibleAdapter.generate_completion") as mock_gen:
+        from modules.system_config.models import AIModel, AIRoute, AIFallback
+        from modules.system_config.services.adapters.protocol import ProviderError
+        m1 = AIModel.objects.create(provider=p1, model_id="model-1", is_enabled=True)
+        m2 = AIModel.objects.create(provider=p2, model_id="model-2", is_enabled=True)
+        route = AIRoute.objects.create(task="caption_generation", primary_model=m1, is_enabled=True)
+        AIFallback.objects.create(route=route, model=m2, priority=1)
+        with patch("modules.system_config.services.adapters.openai_adapter.OpenAICompatibleAdapter.complete") as mock_gen:
             def side_effect(base_url, **kwargs):
                 if "fake-primary" in base_url:
-                    raise RuntimeError("Primary API 500 Internal Error")
-                return "Generated Fallback Caption", "model-2"
-
+                    raise ProviderError("service_error", 503, True)
+                return {"text": "Generated Fallback Caption", "model": "model-2"}
             mock_gen.side_effect = side_effect
-
-            with patch.dict("os.environ", {"TOOLNET_CAPTION_API_KEY": "", "AI_KEY": ""}):
-                text, used_model = generate_ai_text("Write caption")
+            text, used_model = generate_ai_text("Write caption")
             self.assertEqual(text, "Generated Fallback Caption")
             self.assertEqual(used_model, "model-2")
 

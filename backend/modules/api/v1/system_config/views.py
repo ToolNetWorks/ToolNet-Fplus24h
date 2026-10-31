@@ -15,6 +15,7 @@ from modules.api.v1.permissions import IsSuperAdmin
 from modules.system_config.models import (
     AIProvider,
     AIProviderType,
+    AIProviderKey,
     StorageConfig,
     SystemConfigAuditLog,
 )
@@ -487,6 +488,7 @@ class AIProviderRotateKeyAPIView(ConfigAPIView):
 
         if action_type == "revoke":
             provider.api_key_encrypted = ""
+            provider.keys.update(is_active=False)
             provider.save(update_fields=["api_key_encrypted"])
             msg = f"Đã thu hồi API Key của Provider {provider.name}."
         else:
@@ -496,6 +498,8 @@ class AIProviderRotateKeyAPIView(ConfigAPIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             provider.set_api_key(new_key)
+            managed = provider.keys.order_by("priority", "id").first() or AIProviderKey(provider=provider, name="Primary Key")
+            managed.set_secret(new_key); managed.is_active = True; managed.last_status = "untested"; managed.save()
             provider.save(update_fields=["api_key_encrypted"])
             msg = f"Đã cập nhật API Key mới cho Provider {provider.name}."
 

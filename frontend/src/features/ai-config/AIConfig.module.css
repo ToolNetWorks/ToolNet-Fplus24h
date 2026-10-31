@@ -1,0 +1,65 @@
+.ai { background:#fff; color:#24344e; border:1px solid #e4ebf4; border-radius:20px; padding:clamp(18px,3vw,30px); margin-top:18px; min-width:0; width:100%; }
+.ai *, .ai *::before, .ai *::after { box-sizing:border-box; }
+.header,.heading,.sectionTitle,.providerTop,.actions,.pagination { display:flex; align-items:center; gap:12px; }
+.header,.sectionTitle { justify-content:space-between; }
+.heading { min-width:0; }
+.headingIcon,.providerIcon { display:grid; place-items:center; color:#386fee; background:#edf4ff; border-radius:13px; width:49px; height:49px; flex-shrink:0; }
+.ai .header h2 { margin:0; font-size:clamp(21px,2vw,27px); font-weight:650; letter-spacing:-.5px; }
+.ai p { margin:8px 0; font-size:13px; overflow-wrap:anywhere; color:#8390a3; line-height:1.65; }
+.admin { padding:5px 12px; background:#f3f5f9; color:#7c8ba2; border-radius:20px; font-size:12px; }
+.tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); background:#f4f6fa; border-radius:12px; padding:5px; margin:25px 0 30px; gap:4px; }
+.ai.ai button { font:inherit; font-size:12px; background:#fff; color:#526885; border:1px solid #dfe6f0; border-radius:8px; padding:10px 13px; min-height:40px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+.ai.ai button:hover { border-color:#a6bff1; background:#f5f9ff; }
+.ai.ai button:disabled { opacity:.45; cursor:default; }
+.ai.ai button:focus-visible,.ai.ai input:focus-visible,.ai.ai textarea:focus-visible,.ai.ai select:focus-visible { outline:3px solid #9cbbfa; outline-offset:2px; }
+.ai.ai .tabs button { background:transparent; border:0; font-size:14px; color:#7a88a0; white-space:nowrap; padding:11px 4px; }
+.ai.ai .tabs button[aria-pressed=true] { color:#2b61d9; background:white; box-shadow:0 2px 7px #20395a09; font-weight:600; }
+.ai.ai .primary { background:#3269e9; color:white; border-color:#3269e9; }
+.ai .sectionTitle { margin:23px 0 17px; flex-wrap:wrap; }
+.ai .sectionTitle h3 { display:flex; align-items:center; gap:7px; font-size:18px; font-weight:650; margin:0; }
+.ai .sectionTitle p { margin:4px 0 0; font-size:12px; }
+.actions { flex-wrap:wrap; gap:7px; margin-top:14px; }
+.sectionTitle .actions { margin-top:0; }
+.cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.providerCard,.modelCard { border:1px solid #e2e9f3; border-radius:14px; padding:20px; min-width:0; }
+.selected { border-color:#a6c0f3; box-shadow:0 0 0 2px #eff5ff; }
+.providerTop { min-width:0; gap:10px; flex-wrap:wrap; }
+.providerTop > div { flex:1; min-width:0; }
+.ai h4 { font-size:15px; margin:0; font-weight:650; overflow-wrap:anywhere; }
+.providerTop p { margin:3px 0; font-size:12px; }
+.providerIcon { width:39px; height:39px; border-radius:10px; }
+.default { color:#188968; background:#eaf8f2; border-radius:20px; padding:4px 9px; font-size:10px; }
+.ai .url { font-size:12px; overflow-wrap:anywhere; margin:15px 0; color:#7485a0; }
+.metrics { display:flex; flex-wrap:wrap; gap:7px; margin:14px 0; }
+.metrics span { font-size:10px; padding:4px 7px; background:#f4f7fb; border-radius:5px; color:#8090a8; }
+.panel { border:1px solid #e5ebf4; border-radius:14px; padding:23px; margin-top:23px; }
+.ai .panel h3 { font-size:18px; font-weight:600; margin-bottom:18px; }
+.formGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 18px; }
+.ai.ai label { display:flex; flex-direction:column; font-size:12px; font-weight:500; gap:7px; margin:14px 0; min-width:0; color:#647791; }
+.ai.ai input:not([type=checkbox]),.ai.ai select,.ai.ai textarea { font:inherit; font-size:16px; width:100%; min-width:0; color:#2b3f5e; border:1px solid #dfe6f0; border-radius:8px; padding:11px 12px; background:#fff; }
+.ai.ai textarea { resize:vertical; }
+.ai.ai input:disabled,.ai.ai select:disabled { background:#f5f7fa; color:#8a98ad; }
+.ai.ai .check { flex-direction:row; align-items:flex-start; gap:9px; line-height:1.6; }
+.check input { margin-top:3px; width:16px; height:16px; flex-shrink:0; }
+.ai .hint { font-size:11px; color:#8b99ae; }
+.legacy { display:flex; align-items:center; gap:13px; border:1px solid #dfecfc; background:#f6faff; padding:17px; border-radius:12px; margin-bottom:20px; color:#6c8ab8; flex-wrap:wrap; }
+.legacy > div { flex:1; min-width:150px; }
+.legacy strong { font-size:12px; font-weight:600; }
+.legacy p { font-size:11px; margin:4px 0 0; }
+.keyList { display:flex; flex-direction:column; gap:10px; margin-bottom:24px; }
+.keyList > div { padding:15px 0; border-bottom:1px solid #eff2f7; min-width:0; }
+.keyList strong { font-size:13px; }
+.search { display:flex; align-items:center; gap:9px; margin:19px 0; }
+.pagination { flex-wrap:wrap; justify-content:center; margin:24px 0; font-size:12px; color:#7f90a8; }
+.primaryRoute { background:#f4f8ff; border:1px solid #dae8ff; border-radius:13px; padding:22px; margin:22px 0; }
+.fallback { border:1px solid #e2e9f3; border-radius:13px; padding:22px; margin-bottom:22px; }
+.arrow { display:flex; justify-content:center; color:#a4b6ce; margin:15px 0; }
+.testOutput { border:1px solid #dce7f8; border-radius:13px; background:#f8fbff; padding:22px; margin-top:22px; font-size:13px; }
+.testOutput pre { white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; background:white; border:1px solid #e5ecf7; border-radius:8px; padding:15px; margin:14px 0; max-height:420px; overflow-y:auto; font-family:inherit; }
+.error,.success { padding:14px; margin:14px 0; border-radius:9px; font-size:13px; overflow-wrap:anywhere; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.error { color:#b84949; background:#fff4f3; }
+.success { color:#287a60; background:#eefaf4; }
+.loading { display:flex; gap:9px; align-items:center; }
+.empty { padding:35px 12px; text-align:center; }
+.footer { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; text-align:center; gap:7px; border-top:1px solid #eef2f7; padding-top:20px; margin-top:30px; font-size:11px; color:#9aa9bc; }
+@media(max-width:700px) { .cards,.formGrid { grid-template-columns:1fr; } .ai { padding:18px 14px; border-radius:14px; } .headingIcon { width:40px; height:40px; } .heading { gap:10px; } .admin { display:none; } .ai .tabs button { font-size:12px; } .ai .header p { font-size:11px; } .providerCard,.modelCard,.panel,.fallback,.primaryRoute { padding:16px; } .ai .sectionTitle h3 { font-size:16px; } .actions button { flex:1 1 auto; } }

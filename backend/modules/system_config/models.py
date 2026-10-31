@@ -28,7 +28,10 @@ class AIProvider(models.Model):
     api_keys_encrypted = models.TextField(
         "Danh sách API Keys (Encrypted JSON)", blank=True, default=""
     )
-    default_model = models.CharField("Model mặc định", max_length=120)
+    custom_headers_encrypted = models.TextField(blank=True, default="")
+    rotation_authorized = models.BooleanField(default=False)
+    cooldown_until = models.DateTimeField(null=True, blank=True)
+    default_model = models.CharField("Model mặc định", max_length=120, blank=True, default="")
     available_models = models.JSONField("Danh sách Models", default=list, blank=True)
     is_active = models.BooleanField("Đang hoạt động", default=True, db_index=True)
     is_default = models.BooleanField("Provider mặc định", default=False, db_index=True)
@@ -131,3 +134,76 @@ class SystemConfigAuditLog(models.Model):
 
     def __str__(self):
         return f"[{self.section}] {self.action} by {self.actor_username} at {self.created_at}"
+
+
+class AIProviderKey(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.ForeignKey(AIProvider, on_delete=models.CASCADE, related_name="keys")
+    name = models.CharField(max_length=120)
+    secret_encrypted = models.TextField(default="", blank=True)
+    is_active = models.BooleanField(default=True)
+    priority = models.PositiveIntegerField(default=10)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    last_tested_at = models.DateTimeField(null=True, blank=True)
+    last_status = models.CharField(max_length=32, default="untested")
+    last_http_status = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["priority", "created_at", "id"]
+
+    def set_secret(self, value):
+        self.secret_encrypted = encrypt_secret(value)
+
+    def get_secret(self):
+        return decrypt_secret(self.secret_encrypted)
+
+
+class AIModel(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.ForeignKey(AIProvider, on_delete=models.CASCADE, related_name="model_registry")
+    model_id = models.CharField(max_length=120)
+    display_name = models.CharField(max_length=200, blank=True, default="")
+    is_enabled = models.BooleanField(default=False)
+    availability = models.CharField(max_length=16, default="untested", choices=[("untested", "Chưa kiểm tra"), ("available", "Khả dụng"), ("unavailable", "Không khả dụng")])
+    source = models.CharField(max_length=16, default="manual")
+    supports_temperature = models.BooleanField(null=True, blank=True)
+    supports_top_p = models.BooleanField(null=True, blank=True)
+    temperature = models.FloatField(null=True, blank=True)
+    top_p = models.FloatField(null=True, blank=True)
+    max_output_tokens = models.PositiveIntegerField(null=True, blank=True)
+    output_token_limit = models.PositiveIntegerField(null=True, blank=True)
+    token_parameter = models.CharField(max_length=32, default="max_tokens", choices=[("max_tokens", "max_tokens"), ("max_completion_tokens", "max_completion_tokens")])
+    request_timeout = models.PositiveIntegerField(default=60)
+    retry_count = models.PositiveIntegerField(default=0)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    last_tested_at = models.DateTimeField(null=True, blank=True)
+    last_http_status = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["model_id", "id"]
+        constraints = [models.UniqueConstraint(fields=["provider", "model_id"], name="syscfg_provider_model_unique")]
+
+
+class AIRoute(models.Model):
+    task = models.SlugField(primary_key=True, max_length=80)
+    primary_model = models.ForeignKey(AIModel, on_delete=models.PROTECT, related_name="primary_routes")
+    key_policy = models.CharField(max_length=32, default="priority", choices=[("priority", "Priority"), ("round_robin", "Round robin (provider authorized)")])
+    is_enabled = models.BooleanField(default=False)
+    version = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class AIFallback(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    route = models.ForeignKey(AIRoute, on_delete=models.CASCADE, related_name="fallbacks")
+    model = models.ForeignKey(AIModel, on_delete=models.PROTECT, related_name="fallback_routes")
+    priority = models.PositiveIntegerField(default=1)
+    timeout = models.PositiveIntegerField(default=60)
+    retries = models.PositiveIntegerField(default=0)
+    key_policy = models.CharField(max_length=32, default="priority", choices=[("priority", "Priority"), ("round_robin", "Round robin (provider authorized)")])
+
+    class Meta:
+        ordering = ["priority", "id"]
+        constraints = [models.UniqueConstraint(fields=["route", "priority"], name="syscfg_fallback_priority_unique")]

@@ -1,0 +1,55 @@
+name: Admin configuration checks
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/modules/system_config/**'
+      - 'backend/modules/api/v1/system_config/**'
+      - 'backend/scripts/test_admin_config_isolated.py'
+      - 'frontend/src/features/ai-config/**'
+      - 'frontend/src/app/(admin)/config/**'
+      - '.github/workflows/admin-config-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: postgres://isolated:unused@localhost:5432/isolated
+      R2_ENDPOINT_URL: https://storage.example.invalid
+      R2_BUCKET: isolated-test-only
+      R2_ACCESS_KEY_ID: isolated-dummy-access
+      R2_SECRET_ACCESS_KEY: isolated-dummy-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Generate ephemeral test encryption material
+        run: python -c "import secrets,os; open(os.environ['GITHUB_ENV'],'a').write('DJANGO_SECRET_KEY='+secrets.token_urlsafe(64)+'\n')"
+      - run: pip install -r requirements.txt
+      - run: python backend/manage.py check
+      - run: python backend/manage.py makemigrations --check --dry-run --settings=config.settings_test_config
+      - run: python backend/scripts/test_admin_config_isolated.py
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx eslint 'src/app/(admin)/config/page.tsx' src/features/ai-config/*.tsx src/features/ai-config/api.ts
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'

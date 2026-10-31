@@ -14,7 +14,7 @@ class ConfigurationSecurityTests(TestCase):
         self.admin = get_user_model().objects.create_superuser('config-admin', 'admin@example.test', 'test-password')
         self.client.force_login(self.admin)
         self.list_url = reverse('admin-config-ai-providers')
-        self.payload = dict(name='Provider', provider_type='openai', base_url='https://api.example.test/v1', default_model='new-model', api_key='arbitrary-private-key-value', is_default=True)
+        self.payload = dict(name='Provider', provider_type='openai', base_url='https://api.example.test/v1', default_model='new-model', api_key='arbitrary-private-key-value', is_default=True, is_active=True)
 
     def create_provider(self):
         response = self.client.post(self.list_url, self.payload)
@@ -55,19 +55,22 @@ class ConfigurationSecurityTests(TestCase):
         p.priority = 90
         p.save()
         AIProvider.objects.create(name='fallback', base_url='https://fallback.test', default_model='fallback', priority=1)
-        with patch('modules.system_config.services.ai_unified_service.OpenAICompatibleAdapter.generate_completion', return_value=('caption', 'new-model')) as generate:
+        with patch('modules.system_config.services.adapters.openai_adapter.OpenAICompatibleAdapter.complete', return_value={'text': 'caption', 'model': 'new-model'}) as generate:
             from modules.publishing.services.caption_engine import _provider
             self.assertEqual(_provider('prompt', model='old-production-model'), ('caption', 'new-model'))
             self.assertEqual(generate.call_args.kwargs['model'], 'new-model')
             self.assertEqual(generate.call_args.kwargs['base_url'], p.base_url)
 
     def test_revoked_key_is_not_replaced_with_environment_key(self):
+        from modules.system_config.services.adapters.protocol import ProviderError
         p = self.create_provider()
         p.api_key_encrypted = ''
         p.save()
-        with patch('modules.system_config.services.ai_unified_service.OpenAICompatibleAdapter.generate_completion', return_value=('caption', 'env-model')) as generate, patch.dict('os.environ', {'AI_URL': 'https://environment.test', 'AI_KEY': 'env-private', 'AI_MODEL': 'env-model', 'TOOLNET_CAPTION_API_URL': '', 'TOOLNET_CAPTION_API_KEY': '', 'TOOLNET_CAPTION_MODEL': ''}):
-            generate_ai_text('prompt')
-            self.assertEqual(generate.call_args.kwargs['base_url'], 'https://environment.test')
+        p.keys.update(is_active=False)
+        with patch('modules.system_config.services.adapters.openai_adapter.OpenAICompatibleAdapter.complete') as generate:
+            with self.assertRaises(ProviderError):
+                generate_ai_text('prompt')
+            generate.assert_not_called()
 
     def test_staff_only_and_superuser_only_denied_all_mutations(self):
         p = self.create_provider()
@@ -98,7 +101,7 @@ class ConfigurationSecurityTests(TestCase):
         p = self.create_provider()
         p.is_default = False
         p.save()
-        with patch.dict('os.environ', {'AI_URL': 'https://environment.test', 'AI_KEY': 'environment-key', 'AI_MODEL': 'environment-model', 'TOOLNET_CAPTION_API_URL': '', 'TOOLNET_CAPTION_API_KEY': '', 'TOOLNET_CAPTION_MODEL': ''}), patch('modules.system_config.services.ai_unified_service.OpenAICompatibleAdapter.generate_completion', return_value=('caption', 'environment-model')) as generate:
+        with patch.dict('os.environ', {'AI_URL': 'https://environment.test', 'AI_KEY': 'environment-key', 'AI_MODEL': 'environment-model', 'TOOLNET_CAPTION_API_URL': '', 'TOOLNET_CAPTION_API_KEY': '', 'TOOLNET_CAPTION_MODEL': ''}), patch('modules.system_config.services.adapters.openai_adapter.OpenAICompatibleAdapter.complete', return_value={'text': 'caption', 'model': 'environment-model'}) as generate:
             generate_ai_text('prompt')
             self.assertEqual(generate.call_args.kwargs['base_url'], 'https://environment.test')
             self.assertEqual(generate.call_count, 1)
