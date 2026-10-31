@@ -73,6 +73,8 @@ class AdminAIView(ConfigAPIView):
             return Response({'error': str(exc) if hasattr(exc, 'message') else 'Không có quyền thực hiện thao tác.'}, status=403)
         if isinstance(exc, AuthenticationFailed):
             return Response({'error': str(exc) if hasattr(exc, 'message') else 'Xác thực thất bại.'}, status=401)
+        if isinstance(exc, RuntimeError):
+            return Response({'error': str(exc)}, status=503)
         
         # For other errors, use super() but with safe logging
         try:
