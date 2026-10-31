@@ -16,11 +16,17 @@ def add_neon_database(databases, base_dir):
             "DATABASE_URL chưa được cấu hình trong .env"
         )
 
-    databases["neon"] = dj_database_url.parse(
+    neon_cfg = dj_database_url.parse(
         database_url,
         conn_max_age=60,
         conn_health_checks=True,
         ssl_require=True,
     )
+    direct_host = neon_cfg.get("HOST", "").replace("-pooler.", ".")
+    neon_cfg["TEST"] = {
+        "HOST": direct_host,
+        "NAME": "test_neondb",
+    }
+    databases["neon"] = neon_cfg
 
     return databases

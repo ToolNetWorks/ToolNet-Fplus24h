@@ -27,6 +27,25 @@ class StoredImage:
     height: int
     sha256: str
 def read_r2_config():
+    try:
+        from modules.system_config.models import StorageConfig
+        db_cfg = StorageConfig.objects.filter(is_active=True).first()
+        if db_cfg and db_cfg.bucket_name and db_cfg.access_key_id:
+            secret = db_cfg.get_secret_key()
+            if secret:
+                endpoint = db_cfg.endpoint_url
+                if not endpoint and db_cfg.account_id:
+                    endpoint = f"https://{db_cfg.account_id}.r2.cloudflarestorage.com"
+                if endpoint and endpoint.startswith("https://"):
+                    return {
+                        "bucket": db_cfg.bucket_name,
+                        "endpoint": endpoint,
+                        "access_key": db_cfg.get_access_key(),
+                        "secret_key": secret,
+                    }
+    except Exception:
+        pass
+
     values = {
         **dotenv_values(ENV_FILE),
         **os.environ,

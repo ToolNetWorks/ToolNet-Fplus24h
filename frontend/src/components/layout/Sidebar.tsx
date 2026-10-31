@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Workflow,
-  Users,
   Settings,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 
@@ -32,9 +32,9 @@ const menuItems = [
     enabled: true,
   },
   {
-    label: "Quản lý CTV",
-    href: "/ctv",
-    icon: Users,
+    label: "Cấu hình",
+    href: "/config",
+    icon: SlidersHorizontal,
     enabled: true,
   },
   {
