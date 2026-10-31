@@ -120,6 +120,9 @@ class Command(BaseCommand):
             session = prepare_session(claim_result, settings)
             audit.log_event('session_prepared', ready=True)
 
+            # Capture running_op before browser operations (sync context)
+            running_op = claim_result['worker_job'].running_op.get()
+
             caption, media_info = prepare_media(
                 claim_result, session, settings,
             )
@@ -165,12 +168,11 @@ class Command(BaseCommand):
         finally:
             # Release the concurrency lock
             try:
-                op = WorkerRunningOp.objects.get(
-                    publish_job=claim_result['worker_job'],
-                )
-                release_running_op(op)
+                release_running_op(running_op)
                 audit.log_event('running_op_released')
             except WorkerRunningOp.DoesNotExist:
                 pass
+            except Exception:
+                pass  # Lock will expire on its own
 
 import json

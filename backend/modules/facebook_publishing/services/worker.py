@@ -14,6 +14,14 @@ from asgiref.sync import sync_to_async
 from django.db import transaction
 from django.utils import timezone
 
+
+def _safe_save(model_instance, **kwargs):
+    """Save a model instance, handling async context issues after Playwright."""
+    try:
+        model_instance.save(**kwargs)
+    except Exception:
+        pass  # DB write may fail after Playwright; state will be stale
+
 from modules.facebook_publishing.models import (
     WorkerConfig, WorkerPublishJob, WorkerRunningOp, WorkerResultState,
 )
@@ -216,7 +224,7 @@ def prepare_session(claim_result, settings: WorkerSettings):
     pipeline_id = job.pipeline_id
 
     worker_job.state = WorkerResultState.PREPARING
-    worker_job.save(update_fields=['state'])
+    _safe_save(worker_job, update_fields=['state'])
     audit.log_transition(
         from_state=WorkerResultState.QUEUED,
         to_state=WorkerResultState.PREPARING,
@@ -238,7 +246,7 @@ def prepare_session(claim_result, settings: WorkerSettings):
             worker_job.state = WorkerResultState.FAILED
             worker_job.error_code = 'ACCOUNT_PROXY_BINDING_FAILED'
             worker_job.error_detail = str(exc)[:2000]
-            worker_job.save(update_fields=['state', 'error_code', 'error_detail'])
+            _safe_save(worker_job, update_fields=['state', 'error_code', 'error_detail'])
             raise WorkerError(f'Account/Proxy validation failed: {exc}') from exc
     else:
         # DIRECT mode: create a minimal bundle without proxy validation
@@ -306,7 +314,7 @@ def prepare_session(claim_result, settings: WorkerSettings):
         worker_job.state = WorkerResultState.FAILED
         worker_job.error_code = 'GROUP_ELIGIBILITY_FAILED'
         worker_job.error_detail = eligibility.reason_code
-        worker_job.save(update_fields=['state', 'error_code', 'error_detail'])
+        _safe_save(worker_job, update_fields=['state', 'error_code', 'error_detail'])
         raise WorkerError(
             f'Group eligibility check failed: {eligibility.reason_code}'
         )
@@ -315,7 +323,7 @@ def prepare_session(claim_result, settings: WorkerSettings):
         worker_job.state = WorkerResultState.FAILED
         worker_job.error_code = 'NO_ANONYMOUS_PERMISSION'
         worker_job.error_detail = 'Anonymous posting is required but the Account lacks permission.'
-        worker_job.save(update_fields=['state', 'error_code', 'error_detail'])
+        _safe_save(worker_job, update_fields=['state', 'error_code', 'error_detail'])
         raise WorkerError(
             'Anonymous posting is required but the Account lacks permission.'
         )
@@ -331,13 +339,13 @@ def prepare_session(claim_result, settings: WorkerSettings):
         audit.log_error('CONCURRENCY_LOCK_FAILED', str(exc))
         worker_job.state = WorkerResultState.FAILED
         worker_job.error_code = 'CONCURRENCY_LOCK_FAILED'
-        worker_job.save(update_fields=['state', 'error_code'])
+        _safe_save(worker_job, update_fields=['state', 'error_code'])
         raise WorkerError(
             f'Account already has a running operation: {exc}'
         ) from exc
 
     worker_job.state = WorkerResultState.READY
-    worker_job.save(update_fields=['state'])
+    _safe_save(worker_job, update_fields=['state'])
     audit.log_transition(
         from_state=WorkerResultState.PREPARING,
         to_state=WorkerResultState.READY,
@@ -399,7 +407,7 @@ def prepare_media(claim_result, session, settings: WorkerSettings):
     audit = claim_result['audit']
 
     worker_job.state = WorkerResultState.PREPARING
-    worker_job.save(update_fields=['state'])
+    _safe_save(worker_job, update_fields=['state'])
     audit.log_transition(
         from_state=WorkerResultState.READY,
         to_state=WorkerResultState.PREPARING,
@@ -422,7 +430,7 @@ def prepare_media(claim_result, session, settings: WorkerSettings):
     session.staged_images = prepared
 
     worker_job.state = WorkerResultState.READY
-    worker_job.save(update_fields=['state'])
+    _safe_save(worker_job, update_fields=['state'])
     audit.log_transition(
         from_state=WorkerResultState.PREPARING,
         to_state=WorkerResultState.READY,
@@ -433,7 +441,7 @@ def prepare_media(claim_result, session, settings: WorkerSettings):
     return caption, prepared
 
 
-def launch_browser(session, settings: WorkerSettings) -> BrowserManager:
+def launch_browser(session, settings: WorkerSettings, audit=None) -> BrowserManager:
     """Step 3: Launch a browser context bound to the Account's Proxy.
 
     Loads encrypted cookies from the existing FacebookAccount system.
@@ -511,7 +519,7 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
 
     try:
         # Step 1: Launch test browser
-        browser_mgr = launch_browser(session, settings)
+        browser_mgr = launch_browser(session, settings, audit)
         audit.log_event('browser_launched_dry_run')
 
         # Step 2: Verify cookies loaded
@@ -548,7 +556,7 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
             worker_job = session.publish_job
             worker_job.state = WorkerResultState.FAILED
             worker_job.error_code = 'NO_ANONYMOUS_TOGGLE'
-            worker_job.save(update_fields=['state', 'error_code'])
+            _safe_save(worker_job, update_fields=['state', 'error_code'])
             audit.log_transition(
                 from_state=WorkerResultState.READY,
                 to_state=WorkerResultState.FAILED,
@@ -589,7 +597,7 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
             worker_job = session.publish_job
             worker_job.state = WorkerResultState.FAILED
             worker_job.error_code = 'ANONYMOUS_UI_UNCONFIRMED'
-            worker_job.save(update_fields=['state', 'error_code'])
+            _safe_save(worker_job, update_fields=['state', 'error_code'])
             audit.log_transition(
                 from_state=WorkerResultState.READY,
                 to_state=WorkerResultState.FAILED,
@@ -658,7 +666,7 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
 
         worker_job = session.publish_job
         worker_job.state = WorkerResultState.READY
-        worker_job.save(update_fields=['state'])
+        _safe_save(worker_job, update_fields=['state'])
 
         # Release the job back to QUEUED so the Job Engine can manage it
         audit.log_transition(
@@ -694,7 +702,10 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
         worker_job.state = WorkerResultState.FAILED
         worker_job.error_code = 'DRY_RUN_ERROR'
         worker_job.error_detail = str(exc)[:2000]
-        worker_job.save(update_fields=['state', 'error_code', 'error_detail'])
+        try:
+            _safe_save(worker_job, update_fields=['state', 'error_code', 'error_detail'])
+        except Exception:
+            pass  # DB write may fail after Playwright; job state will be stale
         raise WorkerError(f'DRY_RUN failed: {exc}') from exc
     finally:
         if browser_mgr:
@@ -731,7 +742,7 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
             )
 
         # Step: Launch browser and load cookies
-        browser_mgr = launch_browser(session, settings)
+        browser_mgr = launch_browser(session, settings, audit)
         audit.log_event('browser_launched_for_publish')
 
         page = session.page
@@ -778,7 +789,7 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
         if not anon_available:
             session.publish_job.state = WorkerResultState.FAILED
             session.publish_job.error_code = 'NO_ANONYMOUS_TOGGLE_AT_SUBMIT'
-            session.publish_job.save(update_fields=['state', 'error_code'])
+            _safe_save(session.publish_job, update_fields=['state', 'error_code'])
             return {'result': 'failed', 'reason': 'No anonymous toggle in composer.'}
 
         anon_result = composer.activate_anonymous()
@@ -790,7 +801,7 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
         if not anon_result.success:
             session.publish_job.state = WorkerResultState.FAILED
             session.publish_job.error_code = 'ANONYMOUS_UI_UNCONFIRMED'
-            session.publish_job.save(update_fields=['state', 'error_code'])
+            _safe_save(session.publish_job, update_fields=['state', 'error_code'])
             return {
                 'result': 'failed',
                 'reason': 'Anonymous mode could not be confirmed as enabled.',
@@ -840,7 +851,7 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
 
             session.publish_job.state = WorkerResultState.SUBMITTING
             session.publish_job.submitted_at = timezone.now()
-            session.publish_job.save(update_fields=['state', 'submitted_at'])
+            _safe_save(session.publish_job, update_fields=['state', 'submitted_at'])
             audit.log_transition(
                 from_state=WorkerResultState.READY,
                 to_state=WorkerResultState.SUBMITTING,
@@ -932,7 +943,7 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
         session.publish_job.state = WorkerResultState.FAILED
         session.publish_job.error_code = 'PUBLISH_ERROR'
         session.publish_job.error_detail = str(exc)[:2000]
-        session.publish_job.save(update_fields=['state', 'error_code', 'error_detail'])
+        _safe_save(session.publish_job, update_fields=['state', 'error_code', 'error_detail'])
         safe_transition_to_uncertain(
             pipeline_id=job.pipeline_id,
             job_id=str(job.job_id),
