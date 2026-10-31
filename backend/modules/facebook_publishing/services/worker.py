@@ -461,6 +461,23 @@ def launch_browser(session, settings: WorkerSettings) -> BrowserManager:
                 'warning', 'No encrypted cookies found for account.',
             )
 
+        # Verify account identity against Facebook session
+        page = session.page
+        page.goto('https://www.facebook.com/', timeout=int(settings.browser_timeout_seconds) * 1000)
+        page.wait_for_timeout(2000)
+        account_verified = browser_mgr.verify_account_identity(
+            page, session.bundle.account.label,
+        )
+        audit.log_event(
+            'account_identity_verified',
+            verified=account_verified,
+        )
+        if not account_verified:
+            raise WorkerError(
+                'Facebook account identity verification failed. '
+                'Logged-in account does not match expected account.'
+            )
+
         return browser_mgr
     except BrowserManagerError:
         raise
@@ -472,6 +489,17 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
                 claim_result):
     """DRY_RUN: validate everything but do NOT click Post or create a real post.
 
+    New flow:
+    1. Open the Group.
+    2. Verify the correct account (browser_manager).
+    3. Open the composer.
+    4. Check anonymous posting permission.
+    5. Enable anonymous mode.
+    6. Verify the anonymous author.
+    7. Fill in the approved Caption.
+    8. Verify the R2 image.
+    9. Stop before the Post button.
+
     Even if all checks pass, the PublishingJob remains in READY/CLAIMED state.
     The job's Job Engine state is NOT advanced (no begin_dispatch, no post).
     """
@@ -482,11 +510,11 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
     browser_mgr = None
 
     try:
-        # Step: Launch test browser
+        # Step 1: Launch test browser
         browser_mgr = launch_browser(session, settings)
         audit.log_event('browser_launched_dry_run')
 
-        # Step: Verify cookies loaded
+        # Step 2: Verify cookies loaded
         if session.bundle and session.bundle.has_cookies:
             audit.log_event(
                 'encrypted_cookies_loaded',
@@ -498,14 +526,18 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
 
         page = session.page
 
-        # Step: Navigate to the Group
+        # Step 3: Navigate to the Group
         group_url = session.publish_job.group.group_url
         page.goto(group_url, timeout=int(settings.browser_timeout_seconds) * 1000)
         page.wait_for_timeout(2000)
         audit.log_event('navigated_to_group_dry_run')
 
-        # Step: Check anonymous posting option
+        # Step 4: Open the composer
         composer = AnonymousComposer(page, settings)
+        composer.open_composer()
+        audit.log_event('composer_opened_dry_run')
+
+        # Step 5: Check anonymous posting permission inside composer
         anon_available = composer.check_anonymous_posting_available()
         audit.log_event(
             'anonymous_posting_checked',
@@ -520,7 +552,7 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
             audit.log_transition(
                 from_state=WorkerResultState.READY,
                 to_state=WorkerResultState.FAILED,
-                reason='No anonymous posting toggle found',
+                reason='No anonymous posting toggle found in composer',
             )
             # Release the job back to QUEUED for possible retry
             from modules.publishing.services.job_engine import fail_before_dispatch
@@ -533,12 +565,12 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
                     retry_delay_seconds=300,
                 )
                 audit.log_event('job_released_to_queue',
-                                reason='Anonymous toggle not available')
+                                reason='Anonymous toggle not available in composer')
             except Exception:
                 pass
             return {
                 'result': 'failure',
-                'reason': 'Anonymous posting toggle not found on Group page.',
+                'reason': 'Anonymous posting toggle not found in composer.',
                 'eligibility': {
                     'is_eligible': eligibility.is_eligible,
                     'can_post_anonymous': eligibility.can_post_anonymous,
@@ -546,11 +578,56 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
                 },
             }
 
-        # Step: Fill caption (within authorized environment, but do NOT submit)
+        # Step 6: Enable anonymous mode
+        anon_result = composer.activate_anonymous()
+        audit.log_event(
+            'anonymous_activation_result',
+            success=anon_result.success,
+            detail=anon_result.detail,
+        )
+        if not anon_result.success and anon_result.detail == 'ANONYMOUS_UI_UNCONFIRMED':
+            worker_job = session.publish_job
+            worker_job.state = WorkerResultState.FAILED
+            worker_job.error_code = 'ANONYMOUS_UI_UNCONFIRMED'
+            worker_job.save(update_fields=['state', 'error_code'])
+            audit.log_transition(
+                from_state=WorkerResultState.READY,
+                to_state=WorkerResultState.FAILED,
+                reason='Anonymous mode could not be confirmed as enabled',
+            )
+            from modules.publishing.services.job_engine import fail_before_dispatch
+            try:
+                fail_before_dispatch(
+                    pipeline_id=session.publish_job.pipeline_id,
+                    job_id=str(session.publish_job.job_id),
+                    claim_token=claim_result['claim_token'],
+                    error_code='ANONYMOUS_UI_UNCONFIRMED',
+                    retry_delay_seconds=300,
+                )
+            except Exception:
+                pass
+            return {
+                'result': 'failure',
+                'reason': 'Anonymous mode could not be confirmed as enabled in composer.',
+                'eligibility': {
+                    'is_eligible': eligibility.is_eligible,
+                    'can_post_anonymous': eligibility.can_post_anonymous,
+                    'membership_status': eligibility.membership_status,
+                },
+            }
+
+        # Verify anonymous author state
+        anon_enabled = composer.is_anonymous_enabled()
+        audit.log_event(
+            'anonymous_author_verified',
+            enabled=anon_enabled,
+        )
+
+        # Step 7: Fill caption (within authorized environment, but do NOT submit)
         composer.fill_caption(caption)
         audit.log_event('caption_filled_dry_run', length=len(caption))
 
-        # Step: Verify image can be downloaded from R2
+        # Step 8: Verify image can be downloaded from R2
         images_downloaded = 0
         stager = MediaStager(settings)
         try:
@@ -572,10 +649,11 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
         finally:
             stager.cleanup()
 
-        # Do NOT click Post. Do NOT call begin_dispatch. Do NOT submit.
+        # Step 9: Stop before Post button (DRY_RUN)
         audit.log_event('dry_run_ready_to_submit',
                         caption_length=len(caption),
                         anon_checked=anon_available,
+                        anon_enabled=anon_enabled,
                         images_downloaded=images_downloaded)
 
         worker_job = session.publish_job
@@ -583,7 +661,6 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
         worker_job.save(update_fields=['state'])
 
         # Release the job back to QUEUED so the Job Engine can manage it
-        # The PUBLISHING JOB stays in its current state; we only update WorkerPublishJob
         audit.log_transition(
             from_state=WorkerResultState.READY,
             to_state=WorkerResultState.READY,
@@ -602,6 +679,10 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
                 'images_count': images_downloaded,
                 'image_ids': session.image_ids,
                 'caption_length': len(caption),
+            },
+            'anonymous': {
+                'available': anon_available,
+                'enabled': anon_enabled,
             },
         }
 
@@ -663,7 +744,7 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
         page.wait_for_timeout(2000)
         audit.log_event('navigated_to_group_for_publish')
 
-        verification = PublishingVerification(page, settings)
+        verification = PublishingVerification(page, settings, expected_caption=caption)
 
         # Step: Check for CAPTCHA/checkpoint before proceeding
         checkpoint = verification.check_captcha_or_checkpoint()
@@ -687,17 +768,40 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
             )
             return {'result': 'failed', 'reason': f'Checkpoint: {checkpoint}'}
 
-        # Step: Activate anonymous posting
+        # Step: Open composer
         composer = AnonymousComposer(page, settings)
+        composer.open_composer()
+        audit.log_event('composer_opened_for_publish')
+
+        # Step: Activate anonymous posting
         anon_available = composer.check_anonymous_posting_available()
         if not anon_available:
             session.publish_job.state = WorkerResultState.FAILED
             session.publish_job.error_code = 'NO_ANONYMOUS_TOGGLE_AT_SUBMIT'
             session.publish_job.save(update_fields=['state', 'error_code'])
-            return {'result': 'failed', 'reason': 'No anonymous toggle at submit time.'}
+            return {'result': 'failed', 'reason': 'No anonymous toggle in composer.'}
 
-        composer.activate_anonymous()
-        audit.log_event('anonymous_activated')
+        anon_result = composer.activate_anonymous()
+        audit.log_event(
+            'anonymous_activation_result',
+            success=anon_result.success,
+            detail=anon_result.detail,
+        )
+        if not anon_result.success:
+            session.publish_job.state = WorkerResultState.FAILED
+            session.publish_job.error_code = 'ANONYMOUS_UI_UNCONFIRMED'
+            session.publish_job.save(update_fields=['state', 'error_code'])
+            return {
+                'result': 'failed',
+                'reason': 'Anonymous mode could not be confirmed as enabled.',
+            }
+
+        # Verify anonymous author state
+        anon_enabled = composer.is_anonymous_enabled()
+        audit.log_event(
+            'anonymous_author_verified',
+            enabled=anon_enabled,
+        )
 
         # Step: Fill caption
         composer.fill_caption(caption)
