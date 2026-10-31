@@ -57,3 +57,76 @@ class Pipeline(models.Model):
         verbose_name = "Pipeline"
         verbose_name_plural = "Danh sách Pipeline"
         ordering = ["-created_at"]
+
+
+class CTVAdminAuditLog(models.Model):
+    """Immutable audit trail for CTV management actions by Super Admin."""
+
+    class Action(models.TextChoices):
+        CREATE_CTV = "create_ctv", "Tạo CTV"
+        LOCK_CTV = "lock_ctv", "Khóa CTV"
+        UNLOCK_CTV = "unlock_ctv", "Mở khóa CTV"
+        RESET_PASSWORD = "reset_password", "Đặt lại mật khẩu"
+
+    admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="ctv_admin_audit_logs",
+        verbose_name="Admin thực hiện",
+    )
+
+    admin_username = models.CharField(
+        "Username Admin",
+        max_length=150,
+    )
+
+    action = models.CharField(
+        "Hành động",
+        max_length=32,
+        choices=Action.choices,
+    )
+
+    pipeline_id = models.UUIDField(
+        "ID Pipeline",
+        null=True,
+        blank=True,
+    )
+
+    pipeline_name = models.CharField(
+        "Tên Pipeline",
+        max_length=150,
+    )
+
+    ctv_id = models.BigIntegerField(
+        "ID CTV",
+        null=True,
+        blank=True,
+    )
+
+    ctv_username = models.CharField(
+        "Username CTV",
+        max_length=150,
+    )
+
+    created_at = models.DateTimeField(
+        "Thời gian",
+        auto_now_add=True,
+        db_index=True,
+    )
+
+    class Meta:
+        verbose_name = "Audit quản lý CTV"
+        verbose_name_plural = "Audit quản lý CTV"
+        ordering = ["-created_at", "-pk"]
+        indexes = [
+            models.Index(
+                fields=["action", "-created_at"],
+                name="ctvaudit_action_time_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.get_action_display()} - "
+            f"{self.ctv_username}"
+        )

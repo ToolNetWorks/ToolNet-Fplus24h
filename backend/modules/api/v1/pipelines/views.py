@@ -39,6 +39,7 @@ class PipelineCreateAPIView(APIView):
                 username=data["ctv_username"],
                 email=data["ctv_email"],
                 password=data["ctv_password"],
+                admin=request.user,
             )
         except ValidationError as exc:
             errors = (

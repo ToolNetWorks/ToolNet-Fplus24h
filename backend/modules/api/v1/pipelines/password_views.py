@@ -36,6 +36,7 @@ class CTVPasswordAPIView(APIView):
             change_ctv_password(
                 pipeline_id=pipeline_id,
                 new_password=serializer.validated_data["new_password"],
+                admin=request.user,
             )
         except ValidationError:
             return Response(

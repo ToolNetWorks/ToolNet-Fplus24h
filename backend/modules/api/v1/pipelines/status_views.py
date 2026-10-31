@@ -8,7 +8,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from modules.api.v1.permissions import IsSuperAdmin
-from modules.pipelines.models import Pipeline
+from modules.pipelines.models import CTVAdminAuditLog, Pipeline
+from modules.pipelines.services import log_ctv_admin_action
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,17 @@ class PipelineStatusAPIView(APIView):
         if ctv.is_active != new_active:
             ctv.is_active = new_active
             ctv.save(update_fields=["is_active"])
+
+        log_ctv_admin_action(
+            admin=request.user,
+            action=(
+                CTVAdminAuditLog.Action.UNLOCK_CTV
+                if new_active
+                else CTVAdminAuditLog.Action.LOCK_CTV
+            ),
+            pipeline=pipeline,
+            ctv=ctv,
+        )
 
         logger.info(
             "Pipeline status changed",

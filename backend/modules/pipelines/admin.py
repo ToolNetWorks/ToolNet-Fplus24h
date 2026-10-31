@@ -116,6 +116,7 @@ class PipelineAdmin(admin.ModelAdmin):
             username=form.cleaned_data["ctv_username"],
             email=form.cleaned_data["ctv_email"],
             password=form.cleaned_data["ctv_password"],
+            admin=request.user,
         )
 
     def get_deleted_objects(self, objs, request):

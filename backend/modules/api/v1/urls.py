@@ -52,6 +52,10 @@ from .albums.upload_views import AlbumImageUploadAPIView
 from .albums.detail_views import AlbumDetailAPIView
 from .albums.views import AlbumCollectionAPIView
 from .facebook_groups.views import FacebookGroupCollectionAPIView, FacebookGroupDetailAPIView
+from .ctv.admin_views import (
+    CTVAdminAuditLogAPIView,
+    CTVCollectionAPIView,
+)
 from .ctv.session_views import AuthLandingAPIView
 from .ctv.workspace_views import CTVWorkspaceAPIView
 from .facebook_accounts.list_views import FacebookAccountListAPIView
@@ -254,6 +258,26 @@ urlpatterns = [
     path("ctv/workspace/", CTVWorkspaceAPIView.as_view(), name="ctv-workspace"),
     path("pipelines/<uuid:pipeline_id>/facebook-accounts/", FacebookAccountListAPIView.as_view(), name="facebook-account-list"),
     path("pipelines/<uuid:pipeline_id>/facebook-accounts/cookie-upload/", FacebookCookieUploadAPIView.as_view(), name="facebook-cookie-upload"),
+    path(
+        "admin/ctv/",
+        CTVCollectionAPIView.as_view(),
+        name="admin-ctv-list-create",
+    ),
+    path(
+        "admin/ctv/audit-log/",
+        CTVAdminAuditLogAPIView.as_view(),
+        name="admin-ctv-audit-log",
+    ),
+    path(
+        "admin/ctv/<uuid:pipeline_id>/status/",
+        PipelineStatusAPIView.as_view(),
+        name="admin-ctv-status",
+    ),
+    path(
+        "admin/ctv/<uuid:pipeline_id>/password/",
+        CTVPasswordAPIView.as_view(),
+        name="admin-ctv-password-reset",
+    ),
     path(
         "admin/pipelines/<uuid:pipeline_id>/ctv/password/",
         CTVPasswordAPIView.as_view(),

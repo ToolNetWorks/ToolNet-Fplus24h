@@ -35,7 +35,7 @@ const menuItems = [
     label: "Quản lý CTV",
     href: "/ctv",
     icon: Users,
-    enabled: false,
+    enabled: true,
   },
   {
     label: "Cài đặt Admin",

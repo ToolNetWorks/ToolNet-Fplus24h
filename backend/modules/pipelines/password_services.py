@@ -1,8 +1,14 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from .models import Pipeline
+from .models import CTVAdminAuditLog, Pipeline
+from .services import log_ctv_admin_action
 @transaction.atomic
-def change_ctv_password(*, pipeline_id, new_password):
+def change_ctv_password(
+    *,
+    pipeline_id,
+    new_password,
+    admin=None,
+):
     pipeline = (
         Pipeline.objects
         .select_for_update()
@@ -16,4 +22,12 @@ def change_ctv_password(*, pipeline_id, new_password):
         )
     ctv.set_password(new_password)
     ctv.save(update_fields=["password"])
+
+    log_ctv_admin_action(
+        admin=admin,
+        action=CTVAdminAuditLog.Action.RESET_PASSWORD,
+        pipeline=pipeline,
+        ctv=ctv,
+    )
+
     return pipeline

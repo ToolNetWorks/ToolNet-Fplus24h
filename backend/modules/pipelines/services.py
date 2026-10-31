@@ -2,7 +2,32 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from .models import Pipeline
+from .models import CTVAdminAuditLog, Pipeline
+
+
+def log_ctv_admin_action(
+    *,
+    admin,
+    action,
+    pipeline,
+    ctv=None,
+):
+    """Write an audit row without exposing credentials or secrets."""
+    if admin is None or not getattr(admin, "pk", None):
+        return None
+
+    if ctv is None:
+        ctv = pipeline.ctv
+
+    return CTVAdminAuditLog.objects.create(
+        admin=admin,
+        admin_username=admin.get_username(),
+        action=action,
+        pipeline_id=pipeline.pk,
+        pipeline_name=pipeline.name,
+        ctv_id=ctv.pk if ctv is not None else None,
+        ctv_username=ctv.username if ctv is not None else "",
+    )
 
 
 @transaction.atomic
@@ -12,6 +37,7 @@ def create_pipeline_with_ctv(
     username,
     email,
     password,
+    admin=None,
 ):
     User = get_user_model()
 
@@ -26,6 +52,13 @@ def create_pipeline_with_ctv(
     pipeline.ctv = user
     pipeline.full_clean()
     pipeline.save()
+
+    log_ctv_admin_action(
+        admin=admin,
+        action=CTVAdminAuditLog.Action.CREATE_CTV,
+        pipeline=pipeline,
+        ctv=user,
+    )
 
     return pipeline
 
