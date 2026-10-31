@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { getCsrfToken } from "@/features/auth/api/auth-client";
+import R2Drive from "@/features/r2-drive/R2Drive";
 import styles from "./page.module.css";
 
 type Provider = { id: string; name: string; provider_type: string; base_url: string; default_model: string; is_active: boolean; is_default: boolean; priority: number; timeout_seconds: number; has_api_key: boolean; last_status: string };
@@ -23,6 +24,7 @@ async function api<T>(path: string, method = "GET", data?: unknown): Promise<T> 
 
 export default function ConfigPage() {
   const [tab, setTab] = useState(0);
+  const [r2Area, setR2Area] = useState<"drive" | "connection">("drive");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -40,12 +42,12 @@ export default function ConfigPage() {
     setLoading(true); setError("");
     try {
       if (tab === 0) setDb(await api<Database>("database"));
-      if (tab === 1) { const value = await api<R2>("r2"); setR2(value); setStorage({ account_id: value.account_id, endpoint_url: value.endpoint_url, bucket_name: value.bucket_name, access_key_id: "", secret_access_key: "" }); }
+      if (tab === 1 && r2Area === "connection") { const value = await api<R2>("r2"); setR2(value); setStorage({ account_id: value.account_id, endpoint_url: value.endpoint_url, bucket_name: value.bucket_name, access_key_id: "", secret_access_key: "" }); }
       if (tab === 2) setProviders(await api<Provider[]>("ai-providers"));
       if (tab === 3) { const value = await api<{ services: Service[]; checked_at: string }>("services"); setServices(value.services); setCheckedAt(value.checked_at); }
     } catch (e) { setError(e instanceof Error ? e.message : "Không tải được cấu hình."); }
     finally { setLoading(false); }
-  }, [tab]);
+  }, [tab, r2Area]);
   useEffect(() => {
     let cancelled = false;
     void Promise.resolve().then(() => { if (!cancelled) return load(); });
@@ -67,12 +69,13 @@ export default function ConfigPage() {
     {loading && <p role="status">Đang tải dữ liệu thực tế…</p>}
     {busy && <p role="status">Đang xử lý…</p>}
     <section role="tabpanel" id={`config-panel-${tab}`} aria-labelledby={`config-tab-${tab}`} aria-busy={loading || busy}>
-      <button disabled={buttonDisabled} onClick={() => void load()}>Làm mới</button>
+      {(tab !== 1 || r2Area === "connection") && <button disabled={buttonDisabled} onClick={() => void load()}>Làm mới</button>}
+      {tab === 1 && <><div className={styles.r2Areas} role="group" aria-label="Cloudflare R2"><button type="button" aria-pressed={r2Area === "drive"} onClick={() => setR2Area("drive")}>Quản lý tệp</button><button type="button" aria-pressed={r2Area === "connection"} onClick={() => setR2Area("connection")}>Kết nối R2</button></div>{r2Area === "drive" && <R2Drive />}</>}
       {tab === 0 && db && <article className={styles.card}>
         <h2>Neon PostgreSQL</h2><dl className={styles.facts}>{Object.entries({ Host: db.host, Database: db.database_name, Vùng: db.region, 'Trạng thái': db.connection_status, 'Độ trễ': `${db.latency_ms} ms`, 'Kết nối đang mở': db.pool_info.active_connections, 'Giới hạn kết nối': db.pool_info.max_connections, 'Dung lượng': db.pool_info.database_size, 'Phiên bản': db.pool_info.server_version, 'Migrations chờ': db.migrations.pending_migrations }).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
         <p>{db.bootstrap_notice}</p><form onSubmit={e => { e.preventDefault(); void run(() => api("database", "POST", { database_url: dbUrl })); }}><label>URL kết nối thử (để trống để kiểm tra Neon hiện tại)<input type="password" autoComplete="off" value={dbUrl} onChange={e => setDbUrl(e.target.value)} placeholder="postgresql://…" /></label><button disabled={buttonDisabled}>Test Connection</button></form>
       </article>}
-      {tab === 1 && r2 && <article className={styles.card}><h2>Cloudflare R2</h2><p>Nguồn đang dùng: {r2.source} · {r2.storage_stats.total_images} ảnh · {r2.storage_stats.total_size_display}</p><p>Access Key: {r2.has_access_key ? "Đã cấu hình" : "Chưa có"} · Secret: {r2.has_secret ? "Đã mã hóa" : "Chưa có"}</p>
+      {tab === 1 && r2Area === "connection" && r2 && <article className={styles.card}><h2>Cloudflare R2</h2><p>Nguồn đang dùng: {r2.source} · {r2.storage_stats.total_images} ảnh · {r2.storage_stats.total_size_display}</p><p>Access Key: {r2.has_access_key ? "Đã cấu hình" : "Chưa có"} · Secret: {r2.has_secret ? "Đã mã hóa" : "Chưa có"}</p>
         <form onSubmit={e => { e.preventDefault(); void run(() => api("r2", "POST", storage), true); }}><div className={styles.grid}>{([['account_id', 'Account ID'], ['endpoint_url', 'Endpoint URL'], ['bucket_name', 'Bucket Name'], ['access_key_id', 'Access Key ID'], ['secret_access_key', 'Secret Access Key']] as const).map(([key, label]) => <label key={key}>{label}<input type={key.includes('key') ? 'password' : key === 'endpoint_url' ? 'url' : 'text'} autoComplete="off" required={key === 'bucket_name'} value={storage[key]} placeholder={key.includes('key') ? 'Để trống để giữ credentials hiện tại' : ''} onChange={e => setStorage({ ...storage, [key]: e.target.value })} /></label>)}</div><div className={styles.actions}><button disabled={buttonDisabled}>Save</button><button type="button" disabled={buttonDisabled} onClick={() => void run(() => api("r2/test", "POST", { ...storage, test_read_write: true }))}>Test Connection</button>{r2.override_exists && <><button type="button" disabled={buttonDisabled} onClick={() => void run(() => api("r2", "PATCH", { is_active: !r2.override_active }), true)}>{r2.override_active ? 'Disable override' : 'Enable override'}</button><button type="button" disabled={buttonDisabled} onClick={() => { if (window.confirm('Xóa cấu hình riêng và dùng lại cấu hình môi trường?')) void run(() => api('r2', 'DELETE'), true); }}>Dùng cấu hình môi trường</button></>}</div></form><p>Test Connection ghi object tạm riêng, đọc lại và xóa sau khi kiểm tra.</p>
       </article>}
       {tab === 2 && <><article className={styles.card}><h2>API Providers</h2><p>Khi chưa chọn Provider mặc định, Caption Engine tiếp tục dùng cấu hình production từ môi trường. Các Provider còn lại được dùng làm fallback theo độ ưu tiên.</p><div className={styles.grid}>{providers.map(p => <article className={styles.provider} key={p.id}><h3>{p.name} {p.is_default ? '★ Mặc định' : ''}</h3><p>{p.provider_type} · {p.default_model}</p><p>{p.is_active ? 'Enabled' : 'Disabled'} · {p.last_status} · Ưu tiên {p.priority}</p><p className={styles.url}>{p.base_url}</p><div className={styles.actions}><button disabled={buttonDisabled} onClick={() => { setEditing(p.id); setProvider({ ...emptyProvider, ...p, api_key: '' }); }}>Edit</button><button disabled={buttonDisabled} onClick={() => void run(() => api(`ai-providers/${p.id}/test`, 'POST'))}>Test Connection</button><button disabled={buttonDisabled || p.is_default} onClick={() => void run(() => api(`ai-providers/${p.id}`, 'PUT', { is_active: !p.is_active }), true)}>{p.is_active ? 'Disable' : 'Enable'}</button><button disabled={buttonDisabled || p.is_default || !p.is_active} onClick={() => void run(() => api(`ai-providers/${p.id}/set-default`, 'POST'), true)}>Chọn mặc định</button><button disabled={buttonDisabled} onClick={() => { if (window.confirm(`Xóa Provider ${p.name}?`)) void run(() => api(`ai-providers/${p.id}`, 'DELETE'), true); }}>Xóa</button></div></article>)}</div>{providers.length === 0 && <p>Đang sử dụng Provider từ môi trường production.</p>}</article>

@@ -25,3 +25,6 @@
 .facts dt { color: #64748b; }
 .facts dd { overflow-wrap: anywhere; }
 @media(max-width: 640px) { .page { padding: 12px; } .card { padding: 16px; } .grid { grid-template-columns: 1fr; } .facts div { grid-template-columns: 1fr; gap: 2px; } .actions button { flex: 1 1 140px; } }
+
+.r2Areas { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.r2Areas button[aria-pressed=true] { color: #1d4ed8; background: #eff6ff; border-color: #a6c4fa; }

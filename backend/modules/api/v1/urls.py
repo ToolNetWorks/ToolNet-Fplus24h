@@ -1,3 +1,8 @@
+from .system_config.r2_drive_views import (
+    DriveRootAPIView, DrivePipelineAPIView, DriveAlbumAPIView,
+    DriveImageMetadataAPIView, DriveImageContentAPIView, DrivePrefixesAPIView,
+    DriveObjectContentAPIView, DriveObjectMetadataAPIView,
+)
 from .system_config.views import (
     DatabaseConfigAPIView,
     R2ConfigAPIView,
@@ -317,6 +322,14 @@ urlpatterns = [
         AdminOverviewView.as_view(),
         name="admin-overview",
     ),
+    path("admin/config/r2-drive/", DriveRootAPIView.as_view(), name="r2-drive-root"),
+    path("admin/config/r2-drive/pipelines/<uuid:pipeline_id>/", DrivePipelineAPIView.as_view(), name="r2-drive-pipeline"),
+    path("admin/config/r2-drive/pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/", DriveAlbumAPIView.as_view(), name="r2-drive-album"),
+    path("admin/config/r2-drive/pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/images/<uuid:image_id>/", DriveImageMetadataAPIView.as_view(), name="r2-drive-image-metadata"),
+    path("admin/config/r2-drive/pipelines/<uuid:pipeline_id>/albums/<uuid:album_id>/images/<uuid:image_id>/content/", DriveImageContentAPIView.as_view(), name="r2-drive-image-content"),
+    path("admin/config/r2-drive/prefixes/", DrivePrefixesAPIView.as_view(), name="r2-drive-prefixes"),
+    path("admin/config/r2-drive/objects/content/", DriveObjectContentAPIView.as_view(), name="r2-drive-object-content"),
+    path("admin/config/r2-drive/objects/metadata/", DriveObjectMetadataAPIView.as_view(), name="r2-drive-object-metadata"),
     path("admin/config/database/", DatabaseConfigAPIView.as_view(), name="admin-config-database"),
     path("admin/config/r2/", R2ConfigAPIView.as_view(), name="admin-config-r2"),
     path("admin/config/r2/test/", R2TestAPIView.as_view(), name="admin-config-r2-test"),
