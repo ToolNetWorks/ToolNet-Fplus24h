@@ -66,6 +66,24 @@ export default function ConfigPage() {
     finally { setBusy(false); }
   }
   const buttonDisabled = busy || loading;
+  
+  // Function to translate status to Vietnamese
+  const getStatusVietnamese = (status: string): string => {
+    const statusMap: Record<string, string> = {
+      'running': 'Đang hoạt động',
+      'healthy': 'Khỏe mạnh',
+      'connected': 'Đã kết nối',
+      'stopped': 'Dừng',
+      'error': 'Lỗi',
+      'unknown': 'Không xác định',
+      'standby': 'Chờ',
+      'degraded': 'Giảm sút',
+      'idle': 'Không hoạt động',
+      'failed': 'Thất bại',
+    };
+    return statusMap[status] || status;
+  };
+  
   return <main className={styles.page}>
     <header><h1>Cấu hình hệ thống</h1><p>Quản lý kết nối và dịch vụ · Chỉ dành cho Super Admin</p></header>
     <div className={styles.tabs} role="tablist" aria-label="Cấu hình">{tabs.map((name, i) => <button key={name} role="tab" aria-selected={tab === i} aria-controls={`config-panel-${i}`} id={`config-tab-${i}`} disabled={busy} onClick={() => { setMessage(""); setTab(i); }}>{name}</button>)}</div>
