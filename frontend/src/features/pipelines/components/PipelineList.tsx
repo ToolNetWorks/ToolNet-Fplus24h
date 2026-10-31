@@ -120,10 +120,10 @@ export default function PipelineList() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-900">
-            Danh sách Pipeline
+            Danh sách CTV
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Quản lý Pipeline và tài khoản CTV.
+            Quản lý CTV và Pipeline tương ứng.
           </p>
         </div>
 
@@ -132,7 +132,7 @@ export default function PipelineList() {
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700"
         >
           <Plus size={18} />
-          Tạo Pipeline
+          Tạo CTV
         </Link>
       </div>
 
@@ -149,15 +149,15 @@ export default function PipelineList() {
               onChange={(event) =>
                 setSearchInput(event.target.value)
               }
-              placeholder="Tìm Pipeline, Username, Email..."
-              aria-label="Tìm kiếm Pipeline"
+              placeholder="Tìm CTV, Username, Email..."
+              aria-label="Tìm kiếm CTV"
               className="w-full rounded-lg border border-slate-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-900 outline-none focus:border-blue-500"
             />
           </div>
 
           <select
             value={status}
-            aria-label="Lọc trạng thái Pipeline"
+            aria-label="Lọc trạng thái CTV"
             onChange={(event) => {
               setPage(1);
               setStatus(
@@ -206,15 +206,15 @@ export default function PipelineList() {
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         {loading ? (
           <div role="status" className="p-10 text-center text-sm text-slate-500">
-            Đang tải danh sách Pipeline...
+            Đang tải danh sách CTV...
           </div>
         ) : !error && items.length === 0 ? (
           <div className="p-12 text-center">
             <p className="font-medium text-slate-700">
-              Không tìm thấy Pipeline
+              Không tìm thấy CTV
             </p>
             <p className="mt-2 text-sm text-slate-400">
-              Hãy thử bộ lọc khác hoặc tạo Pipeline mới.
+              Hãy thử bộ lọc khác hoặc tạo CTV mới.
             </p>
           </div>
         ) : !error ? (
@@ -223,7 +223,7 @@ export default function PipelineList() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-xs text-slate-500">
                   <tr>
-                    <th className="px-5 py-3.5 font-semibold">Pipeline</th>
+                    <th className="px-5 py-3.5 font-semibold">CTV</th>
                     <th className="px-5 py-3.5 font-semibold">CTV</th>
                     <th className="px-5 py-3.5 font-semibold">Trạng thái</th>
                     <th className="px-5 py-3.5 font-semibold">Ngày tạo</th>
@@ -315,7 +315,7 @@ export default function PipelineList() {
         {!loading && !error && pagination && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-4">
             <p className="text-sm text-slate-500">
-              Tổng: {pagination.total} Pipeline
+              Tổng: {pagination.total} CTV
             </p>
 
             <div className="flex items-center gap-3">

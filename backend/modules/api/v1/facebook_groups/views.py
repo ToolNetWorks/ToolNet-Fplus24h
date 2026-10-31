@@ -30,8 +30,6 @@ def get_accessible_pipeline(user, pipeline_id):
         if pipeline is None:
             raise Http404("Pipeline không tồn tại.")
         return pipeline
-    if user.is_staff or user.is_superuser:
-        raise Http404("Pipeline không tồn tại.")
     pipeline = Pipeline.objects.filter(
         pk=pipeline_id,
         ctv_id=user.pk,

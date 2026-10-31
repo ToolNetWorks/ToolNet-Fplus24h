@@ -14,7 +14,7 @@ export default async function DashboardPage() {
         </h1>
 
         <p className="mt-2 text-sm text-slate-500">
-          Tổng quan hệ thống Pipeline và cộng tác viên.
+          Tổng quan hệ thống CTV và cộng tác viên.
         </p>
       </header>
 
@@ -32,11 +32,11 @@ export default async function DashboardPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-6">
         <h2 className="font-semibold text-slate-900">
-          Quản lý Pipeline
+          Quản lý CTV
         </h2>
 
         <p className="mt-2 text-sm text-slate-500">
-          Danh sách Pipeline và chức năng tạo CTV
+          Danh sách CTV và chức năng tạo Pipeline
           sẽ được triển khai ở bước tiếp theo.
         </p>
       </section>

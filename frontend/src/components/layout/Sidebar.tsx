@@ -26,7 +26,7 @@ const menuItems = [
     enabled: true,
   },
   {
-    label: "Quản lý Pipeline",
+    label: "Quản lý CTV",
     href: "/pipelines",
     icon: Workflow,
     enabled: true,

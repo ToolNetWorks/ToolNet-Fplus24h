@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import PipelineList from "@/features/pipelines/components/PipelineList";
 
 export const metadata: Metadata = {
-  title: "Danh sách Pipeline | ToolNet Fplus24h",
+  title: "Danh sách CTV | ToolNet Fplus24h",
   robots: {
     index: false,
     follow: false,

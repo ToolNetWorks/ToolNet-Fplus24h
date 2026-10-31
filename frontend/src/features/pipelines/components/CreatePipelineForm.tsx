@@ -111,11 +111,11 @@ export default function CreatePipelineForm() {
         >
           <div className="flex items-center gap-2 font-semibold text-green-800">
             <CheckCircle2 size={20} />
-            Tạo Pipeline và tài khoản CTV thành công
+            Tạo CTV và Pipeline thành công
           </div>
 
           <div className="mt-3 space-y-1 text-sm text-green-900">
-            <p>Pipeline: {created.name}</p>
+            <p>CTV: {created.name}</p>
             <p>CTV: {created.ctv.username}</p>
             <p>Trạng thái: {created.status}</p>
           </div>
@@ -128,22 +128,22 @@ export default function CreatePipelineForm() {
       >
         <div className="border-b border-slate-100 px-6 py-5">
           <h2 className="text-lg font-semibold text-slate-900">
-            Thông tin Pipeline
+            Thông tin CTV
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Mỗi Pipeline được gắn với đúng một CTV.
+            Mỗi CTV được gắn với đúng một Pipeline.
           </p>
         </div>
 
         <div className="space-y-5 p-6">
           <div>
             <label htmlFor="pipeline-name" className={labelClass}>
-              Tên Pipeline
+              Tên CTV
             </label>
             <input
               id="pipeline-name"
               className={inputClass}
-              placeholder="Ví dụ: Pipeline Marketing 01"
+              placeholder="Ví dụ: CTV Marketing 01"
               value={form.name}
               maxLength={150}
               required
@@ -181,7 +181,7 @@ export default function CreatePipelineForm() {
             Tài khoản cộng tác viên
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            Tài khoản được tạo tự động khi lưu Pipeline.
+            Tài khoản được tạo tự động khi lưu CTV.
           </p>
         </div>
 
@@ -295,7 +295,7 @@ export default function CreatePipelineForm() {
             ) : (
               <Plus size={18} />
             )}
-            {loading ? "Đang tạo..." : "Tạo Pipeline + CTV"}
+            {loading ? "Đang tạo..." : "Tạo CTV + Pipeline"}
           </button>
         </div>
       </form>

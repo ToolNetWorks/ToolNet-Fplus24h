@@ -18,7 +18,7 @@ export default function OverviewCards({
 }: Props) {
   const cards = [
     {
-      title: "Tổng Pipeline",
+      title: "Tổng CTV",
       value: overview.total_pipelines,
       icon: Workflow,
       color: "text-blue-600",

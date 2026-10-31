@@ -39,7 +39,7 @@ export default function AdminCaptionSettings({ pipelineId }: { pipelineId: strin
   }
 
   return <div className="mx-auto max-w-2xl space-y-5 p-4 sm:p-6">
-    <div><Link href="/pipelines/" className="text-sm text-blue-600">← Quản lý Pipeline</Link>
+    <div><Link href="/pipelines/" className="text-sm text-blue-600">← Quản lý CTV</Link>
       <h1 className="mt-3 text-xl font-bold text-slate-900">Khóa trang đích & AI Caption</h1>
       <p className="mt-1 text-sm text-slate-500">ToolNet Fplus24h · Chỉ Admin được thay đổi trang đích.</p></div>
     {loading && <p className="text-sm text-slate-500">Đang tải cấu hình...</p>}
@@ -51,7 +51,7 @@ export default function AdminCaptionSettings({ pipelineId }: { pipelineId: strin
         <input id="caption-destination" className={`${input} pl-10`} maxLength={64}
           value={form.destination} placeholder="@hiu9h" disabled={loading || busy}
           onChange={e=>setForm(old=>({...old, destination:e.target.value}))}/></div>
-        <p className="mt-2 text-xs text-slate-500">Mỗi Pipeline chỉ được khóa một @username. Không cho đổi khi còn Job chưa hoàn tất.</p></div>
+        <p className="mt-2 text-xs text-slate-500">Mỗi CTV chỉ được khóa một @username. Không cho đổi khi còn Job chưa hoàn tất.</p></div>
       <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={form.enabled}
         disabled={loading || busy} onChange={e=>setForm(old=>({...old,enabled:e.target.checked}))}/>
         Bật AI Caption và yêu cầu caption đã duyệt</label>

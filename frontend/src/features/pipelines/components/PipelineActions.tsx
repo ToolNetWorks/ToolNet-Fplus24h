@@ -178,7 +178,7 @@ export default function PipelineActions({
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
         aria-haspopup="menu"
-        aria-label={`Menu thao tác Pipeline ${item.name}`}
+        aria-label={`Menu thao tác CTV ${item.name}`}
         className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm ${
           isMobile ? "flex-1" : ""
         } ${isOpen ? "ring-2 ring-blue-500/20 border-blue-400" : ""}`}
@@ -206,7 +206,7 @@ export default function PipelineActions({
             }}
             className="w-56 rounded-xl border border-slate-200/90 bg-white p-1.5 shadow-2xl transition animate-in fade-in zoom-in-95 duration-100"
             role="menu"
-            aria-label={`Menu thao tác Pipeline ${item.name}`}
+        aria-label={`Menu thao tác CTV ${item.name}`}
           >
             {/* Khóa / Mở khóa */}
             <button
@@ -230,7 +230,7 @@ export default function PipelineActions({
                   className="text-green-600 flex-shrink-0"
                 />
               )}
-              <span>{isActive ? "Khóa Pipeline" : "Mở khóa Pipeline"}</span>
+              <span>{isActive ? "Khóa CTV" : "Mở khóa CTV"}</span>
             </button>
 
             {/* Đổi mật khẩu */}
@@ -298,7 +298,7 @@ export default function PipelineActions({
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs sm:text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors text-left"
             >
               <Trash2 size={16} className="text-red-500 flex-shrink-0" />
-              <span>Xóa Pipeline</span>
+              <span>Xóa CTV</span>
             </button>
           </div>,
           document.body,
