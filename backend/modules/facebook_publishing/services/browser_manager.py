@@ -135,7 +135,11 @@ class BrowserManager:
 
         # Transform to Playwright cookie format
         pw_cookies = []
+        valid_samesite = {'Strict', 'Lax', 'None'}
         for c in cookies:
+            same_site = c.get('sameSite', 'Lax')
+            if same_site not in valid_samesite:
+                same_site = 'Lax'
             pw_cookies.append({
                 'name': c.get('name', ''),
                 'value': c.get('value', ''),
@@ -143,7 +147,7 @@ class BrowserManager:
                 'path': c.get('path', '/'),
                 'secure': c.get('secure', True),
                 'httpOnly': c.get('httpOnly', False),
-                'sameSite': c.get('sameSite', 'Lax'),
+                'sameSite': same_site,
             })
 
         context.add_cookies(pw_cookies)

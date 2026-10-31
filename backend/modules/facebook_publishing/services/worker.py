@@ -9,6 +9,7 @@ In DRY_RUN mode, the Worker validates everything but never clicks Post.
 import logging
 from dataclasses import dataclass
 from typing import Optional
+from asgiref.sync import sync_to_async
 
 from django.db import transaction
 from django.utils import timezone
@@ -123,12 +124,20 @@ def _can_publish(settings: WorkerSettings, config: Optional[WorkerConfig]) -> bo
 def _create_publish_job_record(*, pipeline_id, job, worker_id, settings,
                                account, group, proxy):
     """Create the WorkerPublishJob record, initialized to QUEUED."""
+    # Only use account.assigned_proxy if proxy not provided and we're in proxy mode
+    final_proxy = proxy
+    if proxy is None:
+        try:
+            final_proxy = account.assigned_proxy
+        except Exception:
+            final_proxy = None
+
     worker_job = WorkerPublishJob.objects.create(
         job=job,
         pipeline_id=pipeline_id,
         account=account,
         group=group,
-        proxy=proxy or account.assigned_proxy,
+        proxy=final_proxy,
         worker_id=worker_id,
         state=WorkerResultState.QUEUED,
         attempt_number=job.attempt_count,
@@ -165,7 +174,10 @@ def claim_job(*, pipeline_id, worker_id, lease_seconds=600):
     # Resolve the proxy for the account only if using PROXY mode
     proxy = None
     if settings.use_proxy:
-        proxy = getattr(job.facebook_account, 'assigned_proxy', None)
+        try:
+            proxy = job.facebook_account.assigned_proxy
+        except Exception:
+            proxy = None
         if proxy is None:
             from modules.proxies.models import ProxyEndpoint
             proxy = ProxyEndpoint.objects.select_related('auth_secret').filter(

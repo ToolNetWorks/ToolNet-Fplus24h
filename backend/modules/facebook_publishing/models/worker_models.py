@@ -97,6 +97,7 @@ class WorkerPublishJob(models.Model):
     )
     proxy = models.ForeignKey(
         'proxies.ProxyEndpoint', on_delete=models.PROTECT,
+        null=True, blank=True,
     )
     worker_id = models.CharField(max_length=100)
     state = models.CharField(

@@ -7,6 +7,7 @@ import logging
 import socket
 import time
 import uuid
+from dataclasses import replace
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -105,8 +106,8 @@ class Command(BaseCommand):
                 logger.error('Cannot force-publish: Worker is disabled.')
                 self.stdout.write('ERROR: Worker is disabled.')
                 return
-            settings.dry_run = False
-            settings.enabled = True
+            from dataclasses import replace
+            settings = replace(settings, dry_run=False, enabled=True)
             if config:
                 config.dry_run = False
                 config.enabled = True
