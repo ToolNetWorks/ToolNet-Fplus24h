@@ -102,16 +102,22 @@ class SystemConfigTests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         data = res.json()
 
+        # Only these safe fields should be present; no internal infrastructure details
         self.assertIn("provider", data)
-        self.assertIn("host", data)
-        self.assertIn("database_name", data)
+        self.assertIn("region", data)
         self.assertIn("connection_status", data)
         self.assertIn("latency_ms", data)
-        self.assertIn("pool_info", data)
-        self.assertIn("migrations", data)
-        # Ensure password is not present anywhere in data
+        self.assertIn("database_size", data)
+        self.assertIn("migrations_pending", data)
+        self.assertIn("migrations_synced", data)
+        self.assertIn("checked_at", data)
+
+        # Ensure password and internal infrastructure fields are not present
         data_str = json.dumps(data)
-        self.assertNotIn("password", data_str.lower().replace("password_validators", ""))
+        self.assertNotIn("password", data_str.lower())
+        self.assertNotIn("host", data_str.lower())
+        self.assertNotIn("database_name", data_str.lower())
+        self.assertNotIn("pool_info", data_str.lower())
 
         # Test POST database test
         test_res = self.client.post(url, {})

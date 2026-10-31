@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { getCsrfToken } from "@/features/auth/api/auth-client";
 import AIConfig from "@/features/ai-config/AIConfig";
 import R2Drive from "@/features/r2-drive/R2Drive";
-import { Zap } from "lucide-react";
 import styles from "./page.module.css";
 
 type R2 = { source: string; account_id: string; endpoint_url: string; bucket_name: string; has_secret: boolean; has_access_key: boolean; override_exists: boolean; override_active: boolean; storage_stats: { total_images: number; total_size_display: string } };
@@ -41,7 +40,6 @@ export default function ConfigPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [db, setDb] = useState<Database | null>(null);
-  const [dbUrl, setDbUrl] = useState("");
   const [r2, setR2] = useState<R2 | null>(null);
   const [storage, setStorage] = useState({ account_id: "", endpoint_url: "", bucket_name: "", access_key_id: "", secret_access_key: "" });
   const [services, setServices] = useState<Service[]>([]);

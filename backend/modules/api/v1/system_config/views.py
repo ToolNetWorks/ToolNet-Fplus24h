@@ -73,10 +73,7 @@ class ConfigAPIView(APIView):
                     "request_path": request.path,
                     "method": request.method,
                     "user_id": getattr(request.user, "id", None),
-                    "has_secrets": any(
-                        hasattr(request, k) and isinstance(getattr(request, k), str)
-                        for k in ("body", "data")
-                    ),
+                    "has_secrets": False,
                 },
             )
             return __import__("django.http", fromlist=["JsonResponse"]).JsonResponse(

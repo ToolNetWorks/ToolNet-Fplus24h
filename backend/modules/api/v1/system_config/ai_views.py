@@ -63,6 +63,17 @@ class AdminAIView(ConfigAPIView):
         if isinstance(exc, ProtectedError):
             return Response({'error': 'Cấu hình đang được tuyến AI sử dụng. Hãy thay đổi tuyến trước.'}, status=409)
         
+        # Map DRF and Django exceptions to appropriate HTTP status codes
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        from django.core.exceptions import PermissionDenied, AuthenticationFailed
+        
+        if isinstance(exc, DRFValidationError):
+            return Response({'error': exc.detail if hasattr(exc, 'detail') else str(exc)}, status=400)
+        if isinstance(exc, PermissionDenied):
+            return Response({'error': str(exc) if hasattr(exc, 'message') else 'Không có quyền thực hiện thao tác.'}, status=403)
+        if isinstance(exc, AuthenticationFailed):
+            return Response({'error': str(exc) if hasattr(exc, 'message') else 'Xác thực thất bại.'}, status=401)
+        
         # For other errors, use super() but with safe logging
         try:
             # Check if it's a Django HTTP exception with safe response
