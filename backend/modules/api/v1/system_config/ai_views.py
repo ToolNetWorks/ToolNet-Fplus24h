@@ -65,7 +65,8 @@ class AdminAIView(ConfigAPIView):
         
         # Map DRF and Django exceptions to appropriate HTTP status codes
         from rest_framework.exceptions import ValidationError as DRFValidationError
-        from django.core.exceptions import PermissionDenied, AuthenticationFailed
+        from django.core.exceptions import PermissionDenied
+        from django.contrib.auth.exceptions import AuthenticationFailed
         
         if isinstance(exc, DRFValidationError):
             return Response({'error': exc.detail if hasattr(exc, 'detail') else str(exc)}, status=400)
