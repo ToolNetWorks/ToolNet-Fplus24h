@@ -103,8 +103,9 @@ def _historical_constraints(pipeline_id, now, slot):
     existing = list(
         PublishingJob.objects.filter(pipeline_id=pipeline_id).filter(
             Q(state__in=BLOCKING_JOB_STATES) |
-            Q(state=PublishingJob.State.PUBLISHED,
-              finalized_at__gte=now - timedelta(days=1))
+            Q(state__in=(PublishingJob.State.PUBLISHED, PublishingJob.State.SUBMITTED),
+              finalized_at__gte=now - timedelta(days=1)) |
+            Q(state=PublishingJob.State.SUBMITTED, finalized_at__isnull=True)
         ).values(
             'facebook_account_id', 'facebook_group_id', 'state',
             'scheduled_at', 'finalized_at'
@@ -118,7 +119,7 @@ def _historical_constraints(pipeline_id, now, slot):
         acc = job['facebook_account_id']
         grp = job['facebook_group_id']
         state = job['state']
-        if state in BLOCKING_JOB_STATES:
+        if state in BLOCKING_JOB_STATES or (state == PublishingJob.State.SUBMITTED and not job['finalized_at']):
             group_blocked.add(grp)
             account_times[acc].append(job['scheduled_at'])
             if now - timedelta(days=1) <= job['scheduled_at'] <= slot + timedelta(days=1):

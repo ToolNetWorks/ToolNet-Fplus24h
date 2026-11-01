@@ -129,10 +129,14 @@ def quarantine_stale_leases(*, pipeline_id, limit=20, now=None):
                 media.state = MediaAllocation.State.UNCERTAIN
                 media.save(update_fields=['state', 'updated_at'])
         previous_state = job.state
-        event = WorkerLeaseEvent.objects.create(
-            pipeline=pipeline, job=job, attempt_number=job.attempt_count,
-            previous_state=previous_state, reason_code='WORKER_LEASE_EXPIRED',
+        event, _ = WorkerLeaseEvent.objects.get_or_create(
+            job=job, attempt_number=job.attempt_count,
+            kind=WorkerLeaseEvent.Kind.QUARANTINED,
+            defaults={'pipeline': pipeline, 'previous_state': previous_state,
+                      'reason_code': 'WORKER_LEASE_EXPIRED'},
         )
+        if event.pipeline_id != pipeline.pk:
+            raise WorkerGuardConflict('Existing lease event belongs to another Pipeline.')
         job.state = PublishingJob.State.UNCERTAIN
         job.error_code = 'WORKER_LEASE_EXPIRED'
         job.claim_token = ''
