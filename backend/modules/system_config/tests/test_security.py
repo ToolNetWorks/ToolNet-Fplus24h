@@ -50,6 +50,25 @@ class ConfigurationSecurityTests(TestCase):
         self.assertNotIn('secret-value', response.content.decode())
         self.assertFalse(AIProvider.objects.exists())
 
+    def test_handled_validation_error_rolls_back_mutation_and_audit(self):
+        from rest_framework import serializers
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from modules.api.v1.system_config.ai_views import AdminAIView
+        from modules.api.v1.system_config.views import _log_audit
+
+        class FailingView(AdminAIView):
+            def post(self, request):
+                AIProvider.objects.create(name='temporary')
+                _log_audit(request, 'ai_providers', 'temporary')
+                raise serializers.ValidationError({'name': 'Invalid name.'})
+
+        request = APIRequestFactory().post('/')
+        force_authenticate(request, user=self.admin)
+        response = FailingView.as_view()(request)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AIProvider.objects.filter(name='temporary').exists())
+        self.assertFalse(SystemConfigAuditLog.objects.filter(action='temporary').exists())
+
     def test_default_priority_and_caption_engine_integration(self):
         p = self.create_provider()
         p.priority = 90

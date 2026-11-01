@@ -22,87 +22,11 @@ class AdminAIView(ConfigAPIView):
     permission_classes = [IsSuperAdmin]
 
     def handle_exception(self, exc):
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        # Log structured error information without exposing secrets
-        error_info = {
-            "error_type": type(exc).__name__,
-            "error_message": str(exc) if hasattr(exc, 'message') else None,
-            "status_code": getattr(exc, 'status_code', None),
-        }
-        
-        # Add safe context information
-        from django.http import HttpRequest
-        from rest_framework.request import Request
-        import traceback
-        
-        # Get request info from context if available
-        try:
-            request = self.context.get('request') if hasattr(self, 'context') else None
-            if request:
-                error_info.update({
-                    "request_path": request.path,
-                    "method": request.method,
-                    "query_params": dict(request.query_params) if hasattr(request, 'query_params') else None,
-                    "user_id": request.user.id if hasattr(request, 'user') and request.user.is_authenticated else None,
-                })
-        except:
-            pass
-        
-        # Log the structured error
-        logger.error(
-            "AI Configuration API error",
-            extra=error_info,
-            exc_info=False  # Don't include full traceback to avoid exposing sensitive data
-        )
-        
-        # Handle specific error types
         if isinstance(exc, ProviderError):
             return Response(exc.public(), status=400)
         if isinstance(exc, ProtectedError):
             return Response({'error': 'Cấu hình đang được tuyến AI sử dụng. Hãy thay đổi tuyến trước.'}, status=409)
-        
-        # Map DRF and Django exceptions to appropriate HTTP status codes
-        from rest_framework.exceptions import ValidationError as DRFValidationError, PermissionDenied as DRFPermissionDenied
-        from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
-        from django.contrib.auth.exceptions import AuthenticationFailed
-        
-        if isinstance(exc, DRFValidationError):
-            return Response({'error': exc.detail if hasattr(exc, 'detail') else str(exc)}, status=400)
-        if isinstance(exc, (DRFPermissionDenied, DjangoPermissionDenied)):
-            return Response({'error': str(exc) if hasattr(exc, 'message') else 'Không có quyền thực hiện thao tác.'}, status=403)
-        if isinstance(exc, AuthenticationFailed):
-            return Response({'error': str(exc) if hasattr(exc, 'message') else 'Xác thực thất bại.'}, status=401)
-        if isinstance(exc, RuntimeError):
-            return Response({'error': str(exc)}, status=503)
-        
-        # For other errors, use super() but with safe logging
-        try:
-            # Check if it's a Django HTTP exception with safe response
-            from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, HttpResponseForbidden, HttpResponseNotAllowed
-            
-            if isinstance(exc, (HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, HttpResponseForbidden, HttpResponseNotAllowed)):
-                # Return the HTTP exception response directly
-                return Response(
-                    {"error": getattr(exc, 'reason', str(exc))},
-                    status=getattr(exc, 'status_code', 500)
-                )
-            
-            # For other errors, return a generic 500 response but log the actual error type
-            error_type = type(exc).__name__
-            logger.warning(f"Unhandled exception type in AI Config API: {error_type}")
-            
-            return Response(
-                {"error": "Không thể thực hiện thao tác cấu hình AI. Vui lòng thử lại."},
-                status=500
-            )
-        except Exception as logging_exc:
-            logger.error(f"Error while handling AI config exception: {logging_exc}")
-            return Response(
-                {"error": "Không thể xử lý yêu cầu."},
-                status=500
-            )
+        return super().handle_exception(exc)
 
 
 def provider_data(provider):

@@ -63,11 +63,14 @@ class ConfigAPIView(APIView):
     def dispatch(self, request, *args, **kwargs):
         try:
             with transaction.atomic():
-                return super().dispatch(request, *args, **kwargs)
+                response = super().dispatch(request, *args, **kwargs)
+                if getattr(response, "exception", False):
+                    transaction.set_rollback(True)
+                return response
         except Exception as e:
             logger.error(
                 "System configuration operation failed; transaction rolled back",
-                exc_info=True,
+                exc_info=False,
                 extra={
                     "error_type": type(e).__name__,
                     "request_path": request.path,
