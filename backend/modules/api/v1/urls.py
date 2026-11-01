@@ -84,7 +84,7 @@ from .ctv.admin_views import (
 from .ctv.session_views import AuthLandingAPIView
 from .ctv.workspace_views import CTVWorkspaceAPIView
 from .facebook_accounts.list_views import FacebookAccountListAPIView
-from .facebook_accounts.upload_views import FacebookCookieUploadAPIView
+from .facebook_accounts.upload_views import FacebookCookieUploadAPIView, FacebookCookieReplaceAPIView
 from .pipelines.delete_views import PipelineDetailAPIView
 from .pipelines.edit_views import PipelineEditAPIView
 from django.urls import path
@@ -285,6 +285,7 @@ urlpatterns = [
     path("ctv/workspace/", CTVWorkspaceAPIView.as_view(), name="ctv-workspace"),
     path("pipelines/<uuid:pipeline_id>/facebook-accounts/", FacebookAccountListAPIView.as_view(), name="facebook-account-list"),
     path("pipelines/<uuid:pipeline_id>/facebook-accounts/cookie-upload/", FacebookCookieUploadAPIView.as_view(), name="facebook-cookie-upload"),
+    path("pipelines/<uuid:pipeline_id>/facebook-accounts/<uuid:account_id>/cookie/", FacebookCookieReplaceAPIView.as_view(), name="facebook-cookie-replace"),
     path(
         "admin/ctv/",
         CTVCollectionAPIView.as_view(),

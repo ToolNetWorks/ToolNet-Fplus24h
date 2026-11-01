@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import {
   uploadFacebookCookie,
+  replaceFacebookCookie,
   type FacebookAccount,
   type ConnectionStatus,
 } from "@/features/facebook-accounts/api/facebook-accounts";
@@ -131,7 +132,7 @@ export default function CTVAccountsTable({
   pipelineId: string;
 }) {
   const [result, setResult] = useState<AccountsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [settledRequest, setSettledRequest] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -144,15 +145,16 @@ export default function CTVAccountsTable({
   const [label, setLabel] = useState("");
   const [profileUrl, setProfileUrl] = useState("");
   const [cookieFile, setCookieFile] = useState<File | null>(null);
+  const [replacingAccount, setReplacingAccount] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [success, setSuccess] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const requestKey = JSON.stringify([pipelineId, page, pageSize, search, status, revision]);
+  const loading = settledRequest !== requestKey;
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError("");
     fetchAccounts(
       pipelineId,
       { page, pageSize, search, status },
@@ -161,6 +163,7 @@ export default function CTVAccountsTable({
       .then((data) => {
         if (controller.signal.aborted) return;
         setResult(data);
+        setError("");
         setSelectedIds([]);
       })
       .catch((cause) => {
@@ -171,11 +174,11 @@ export default function CTVAccountsTable({
       })
       .finally(() => {
         if (!controller.signal.aborted) {
-          setLoading(false);
+          setSettledRequest(requestKey);
         }
       });
     return () => controller.abort();
-  }, [pipelineId, page, pageSize, search, status, revision]);
+  }, [pipelineId, page, pageSize, search, status, requestKey]);
 
   const items = result?.data ?? [];
   const summary = result?.summary;
@@ -239,6 +242,17 @@ export default function CTVAccountsTable({
     } finally {
       setUploading(false);
     }
+  }
+
+  async function handleReplace(account: Account, file: File | undefined) {
+    if (!file || replacingAccount) return;
+    setReplacingAccount(account.id); setError(''); setSuccess('');
+    try {
+      await replaceFacebookCookie(pipelineId, account.id, file);
+      setSuccess('Đã cập nhật cookie cho tài khoản; phiên Facebook vẫn cần được xác minh.');
+      refresh();
+    } catch (cause) { setError(message(cause)); }
+    finally { setReplacingAccount(null); }
   }
 
   return (
@@ -542,7 +556,17 @@ export default function CTVAccountsTable({
                         Chưa có tác vụ
                       </td>
                       <td className="px-3 py-2.5 text-slate-400">
-                        —
+                        <label className="inline-flex cursor-pointer items-center gap-1 rounded border px-2 py-1 text-slate-700">
+                          <Upload size={14} /> {replacingAccount === account.id ? 'Đang lưu...' : 'Cập nhật cookie'}
+                          <input type="file" accept=".json,application/json" className="sr-only"
+                            disabled={!!replacingAccount || account.connection_status === 'disabled'}
+                            aria-label={`Cập nhật cookie cho ${account.label}`}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              event.target.value = '';
+                              void handleReplace(account, file);
+                            }} />
+                        </label>
                       </td>
                     </tr>
                   );

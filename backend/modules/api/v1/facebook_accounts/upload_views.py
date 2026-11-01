@@ -1,3 +1,5 @@
+import logging
+
 from django.core.exceptions import (
     ValidationError as DjangoValidationError,
 )
@@ -21,6 +23,7 @@ from modules.facebook_accounts.credentials import (
     FacebookCookieSecret,
 )
 from modules.pipelines.models import Pipeline
+logger = logging.getLogger(__name__)
 class FacebookCookieUploadThrottle(UserRateThrottle):
     rate = "10/hour"
 class FacebookCookieUploadSerializer(serializers.Serializer):
@@ -37,6 +40,65 @@ class FacebookCookieUploadSerializer(serializers.Serializer):
     file = serializers.FileField(
         allow_empty_file=False,
     )
+
+
+class FacebookCookieReplaceThrottle(UserRateThrottle):
+    scope = 'facebook_cookie_replace'
+    rate = '10/hour'
+
+
+class FacebookCookieReplaceAPIView(APIView):
+    """Replace a single account's cookies without creating a duplicate account."""
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    throttle_classes = [FacebookCookieReplaceThrottle]
+
+    def post(self, request, pipeline_id, account_id):
+        from modules.api.v1.albums.views import resolve_pipeline
+        from modules.facebook_publishing.models import WorkerRunningOp
+        from modules.publishing.models import PublishingJob
+
+        pipeline = resolve_pipeline(request.user, pipeline_id)
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file or set(request.data) != {'file'}:
+            return Response({'detail': 'Cần đúng một file cookie JSON.'}, status=400)
+        if not uploaded_file.name.lower().endswith('.json') or uploaded_file.size > MAX_COOKIE_FILE_SIZE:
+            return Response({'detail': 'Chỉ nhận file JSON tối đa 64 KB.'}, status=400)
+        try:
+            cookies = parse_facebook_cookie_file(uploaded_file.read(MAX_COOKIE_FILE_SIZE + 1))
+            ciphertext = encrypt_cookies(cookies)
+        except (CookieFileError, ValueError):
+            return Response({'detail': 'File cookie Facebook không hợp lệ.'}, status=400)
+
+        with transaction.atomic():
+            locked_pipeline = Pipeline.objects.select_for_update().get(pk=pipeline.pk)
+            if locked_pipeline.status != Pipeline.Status.ACTIVE:
+                return Response({'detail': 'Pipeline đang bị khóa.'}, status=409)
+            account = FacebookAccount.objects.select_for_update().filter(
+                pk=account_id, pipeline=locked_pipeline).first()
+            if account is None:
+                return Response({'detail': 'Tài khoản không tồn tại.'}, status=404)
+            if account.connection_status == FacebookAccount.ConnectionStatus.DISABLED:
+                return Response({'detail': 'Tài khoản đang bị vô hiệu hóa.'}, status=409)
+            cookie_uid = next((item['value'] for item in cookies if item['name'] == 'c_user'), '')
+            if account.facebook_user_id and cookie_uid != account.facebook_user_id:
+                return Response({'detail': 'Cookie không khớp danh tính tài khoản đã xác minh.'}, status=400)
+            if (WorkerRunningOp.objects.filter(account=account).exists() or
+                    PublishingJob.objects.filter(pipeline=locked_pipeline, facebook_account=account,
+                        state__in=('claimed', 'ready', 'dispatching', 'uncertain')).exists()):
+                return Response({'detail': 'Tài khoản đang có Job cần xử lý hoặc đối soát.'}, status=409)
+            FacebookCookieSecret.objects.update_or_create(account=account, defaults={
+                'ciphertext': ciphertext, 'cookie_count': len(cookies), 'key_version': 1,
+            })
+            account.connection_status = FacebookAccount.ConnectionStatus.NOT_CONNECTED
+            account.last_verified_at = None
+            account.save(update_fields=['connection_status', 'last_verified_at', 'updated_at'])
+        logger.info('facebook_cookie_replaced pipeline=%s account=%s actor=%s',
+                    pipeline.pk, account_id, request.user.pk)
+        response = Response({'success': True, 'message': 'Đã cập nhật cookie; phiên chưa được xác minh.'})
+        response['Cache-Control'] = 'private, no-store'
+        return response
 class FacebookCookieUploadAPIView(APIView):
     authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]

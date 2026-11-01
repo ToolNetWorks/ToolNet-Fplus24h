@@ -119,3 +119,18 @@ export async function uploadFacebookCookie(
     throw new Error("Không thể lưu tài khoản Facebook.");
   }
 }
+
+export async function replaceFacebookCookie(pipelineId: string, accountId: string, file: File): Promise<void> {
+  if (!file.name.toLowerCase().endsWith('.json') || file.size > 64 * 1024) {
+    throw new Error('Chỉ hỗ trợ file JSON tối đa 64 KB.');
+  }
+  const csrfToken = await getCsrfToken();
+  const body = new FormData();
+  body.append('file', file);
+  const response = await fetch(
+    `/api/v1/pipelines/${encodeURIComponent(pipelineId)}/facebook-accounts/${encodeURIComponent(accountId)}/cookie/`,
+    { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': csrfToken }, body },
+  );
+  const data = await readApiResponse(response);
+  if (data.success !== true) throw new Error('Không thể cập nhật cookie.');
+}
