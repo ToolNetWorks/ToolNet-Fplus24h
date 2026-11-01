@@ -190,6 +190,34 @@ def _choose_images(pipeline_id, sources, cycle, policy, quantity, exclude_ids=No
     return chosen
 
 
+def media_available(*, pipeline_id):
+    """Read-only preflight; reservation remains authoritative under lock."""
+    policy = PipelineMediaPolicy.objects.filter(pipeline_id=pipeline_id, is_enabled=True).first()
+    if not policy or not 1 <= policy.images_per_post <= 10:
+        return False
+    sources = list(PipelineAlbumSource.objects.filter(
+        pipeline_id=pipeline_id, is_enabled=True, album__is_enabled=True,
+        album__pipeline_id=pipeline_id,
+    ).select_related('album').order_by('position', 'pk'))
+    if not sources:
+        return False
+    cycle = MediaAllocation.objects.filter(pipeline_id=pipeline_id).aggregate(
+        highest=Max('cycle_number'))['highest'] or 1
+    if cycle >= 2147483647:
+        return False
+    images = _choose_images(pipeline_id, sources, cycle, policy, policy.images_per_post)
+    if len(images) >= policy.images_per_post:
+        return True
+    if policy.reuse_policy == PipelineMediaPolicy.ReusePolicy.NO_REPEAT:
+        return False
+    if MediaAllocation.objects.filter(pipeline_id=pipeline_id, state__in=ACTIVE_STATES).exists():
+        return False
+    images.extend(_choose_images(pipeline_id, sources, cycle + 1, policy,
+                                 policy.images_per_post - len(images),
+                                 exclude_ids={image.pk for image in images}))
+    return len(images) >= policy.images_per_post
+
+
 @transaction.atomic
 def expire_stale_reservations(*, pipeline_id):
     """Persist fail-closed expiry transitions in their OWN transaction.

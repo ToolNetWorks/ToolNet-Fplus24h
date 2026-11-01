@@ -13,7 +13,8 @@ import secrets
 from datetime import datetime, timedelta
 
 from django.db import transaction
-from django.db.models import Q, F
+from django.db.models import Q, F, Exists, OuterRef, Value, CharField
+from django.db.models.functions import Cast, Concat, Replace
 from django.utils import timezone
 
 from modules.facebook_accounts.models import FacebookAccount
@@ -142,6 +143,18 @@ def claim_due_job(*, pipeline_id, worker_id, lease_seconds=600, job_id=None):
         return None
     now = timezone.now()
     blocked_accounts, blocked_groups = held_subject_ids(pipeline_id=pipeline.pk)
+    # An orphan allocation may outlive a reset job. Never reclaim that job
+    # until its earlier, potentially submitted attempt has been reconciled.
+    allocation_prefix = Concat(
+        Value('pubjob-'),
+        Replace(Cast(OuterRef('pk'), CharField()), Value('-'), Value('')),
+        Value('-a'),
+    )
+    unresolved_allocations = MediaAllocation.objects.filter(
+        pipeline_id=pipeline.pk,
+        state__in=(MediaAllocation.State.RESERVED, MediaAllocation.State.UNCERTAIN),
+        request_key__startswith=allocation_prefix,
+    )
     candidates = (PublishingJob.objects.select_for_update(of=('self',))
            .filter(pipeline_id=pipeline.pk, state=PublishingJob.State.QUEUED,
                    facebook_account__connection_status=FacebookAccount.ConnectionStatus.CONNECTED,
@@ -150,6 +163,9 @@ def claim_due_job(*, pipeline_id, worker_id, lease_seconds=600, job_id=None):
            .exclude(facebook_account_id__in=blocked_accounts)
            .exclude(facebook_group_id__in=blocked_groups)
            .exclude(manual_handoff__state='prepared')
+           .annotate(_unresolved_allocation=Exists(unresolved_allocations))
+           .filter(_unresolved_allocation=False)
+           .exclude(caption__icontains='[TRANG_DICH]')
            .filter(Q(pipeline__caption_settings__isnull=True) |
                    Q(pipeline__caption_settings__enabled=False) |
                    Q(ai_caption__state='approved',

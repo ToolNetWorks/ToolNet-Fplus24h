@@ -1,0 +1,22 @@
+[Unit]
+Description=ToolNet Facebook Publishing Worker for pipeline %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/toolnet-group-publisher/backend
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/root/toolnet-group-publisher/.env
+ExecStart=/root/toolnet-group-publisher/.venv/bin/python manage.py facebook_publishing_worker --pipeline-id %i --watch --poll-seconds 60
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=90
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

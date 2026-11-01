@@ -159,6 +159,39 @@ class FacebookPublishingWorkerTestBase(TestCase):
 
 
 class TestTargetedJobClaim(FacebookPublishingWorkerTestBase):
+    def test_queue_skips_uncertain_old_attempt_and_placeholder(self):
+        from modules.publishing.models import MediaAllocation
+        from modules.publishing.services.job_engine import claim_due_job
+        old = self._create_job()
+        MediaAllocation.objects.create(
+            pipeline=self.pipeline, request_key=f'pubjob-{old.pk.hex}-a1',
+            state=MediaAllocation.State.UNCERTAIN, images_requested=1,
+            lease_expires_at=timezone.now(), policy_snapshot={'source': 'test'},
+        )
+        placeholder = self._create_job()
+        placeholder.caption = 'Nội dung [TRANG_DICH]'
+        placeholder.save()
+        valid = self._create_job()
+        result = claim_due_job(pipeline_id=self.pipeline.pk, worker_id='test-worker')
+        self.assertEqual(result['job']['id'], str(valid.pk))
+        old.refresh_from_db()
+        placeholder.refresh_from_db()
+        self.assertEqual(old.state, PublishingJob.State.QUEUED)
+        self.assertEqual(placeholder.state, PublishingJob.State.QUEUED)
+
+    def test_media_preflight_does_not_reserve_images(self):
+        from modules.albums.models import Album, AlbumImage
+        from modules.publishing.models import PipelineMediaPolicy, PipelineAlbumSource, MediaAllocation
+        from modules.publishing.services.media_selection import media_available
+        PipelineMediaPolicy.objects.create(pipeline=self.pipeline, is_enabled=True)
+        album = Album.objects.create(pipeline=self.pipeline, name='Album')
+        PipelineAlbumSource.objects.create(pipeline=self.pipeline, album=album, position=1)
+        self.assertFalse(media_available(pipeline_id=self.pipeline.pk))
+        AlbumImage.objects.create(album=album, original_filename='photo.jpg',
+                                  upload_status=AlbumImage.UploadStatus.READY)
+        self.assertTrue(media_available(pipeline_id=self.pipeline.pk))
+        self.assertFalse(MediaAllocation.objects.filter(pipeline=self.pipeline).exists())
+
     def test_legacy_dry_run_flag_does_not_control_publishing(self):
         from modules.facebook_publishing.services.worker import _can_publish
         self.config.dry_run = True
@@ -204,7 +237,7 @@ class TestTargetedJobClaim(FacebookPublishingWorkerTestBase):
              patch(prefix + 'prepare_media', return_value=('caption', {'images': []})), \
              patch(prefix + 'release_running_op'), \
              patch(prefix + 'run_publish') as publish, \
-             patch('modules.publishing.services.job_engine.fail_before_dispatch') as fail:
+             patch(prefix + 'fail_before_dispatch') as fail:
             with self.assertRaises(WorkerError):
                 Command()._process_one(self.pipeline.pk, 'worker', True, MagicMock(),
                                        job_id=uuid.uuid4(), expected_image_id=uuid.uuid4())

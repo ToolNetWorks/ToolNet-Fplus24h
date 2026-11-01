@@ -19,6 +19,8 @@ from modules.facebook_publishing.services.account_binding import release_running
 from modules.facebook_publishing.services.audit_log import AuditLogger
 from modules.facebook_publishing.services.eligibility import check_group_eligibility
 from modules.facebook_publishing.models import WorkerRunningOp
+from modules.publishing.services.media_selection import media_available
+from modules.publishing.services.job_engine import fail_before_dispatch, JobEngineError
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +75,10 @@ class Command(BaseCommand):
                 raise CommandError('poll-seconds must be between 5 and 3600.')
             while True:
                 try:
-                    self._process_one(
-                        pipeline_id, worker_id, False, audit,
-                    )
+                    if media_available(pipeline_id=pipeline_id):
+                        self._process_one(pipeline_id, worker_id, False, audit)
+                    else:
+                        logger.warning('No eligible images for pipeline %s; waiting.', pipeline_id)
                 except WorkerNotEnabledError:
                     logger.info('Worker not enabled for pipeline %s, sleeping.', pipeline_id)
                 except WorkerError as exc:
@@ -105,6 +108,7 @@ class Command(BaseCommand):
         settings = claim_result['settings']
         config = claim_result.get('config')
         claim_token = claim_result['claim_token']
+        running_op = None
 
         try:
             session = prepare_session(claim_result, settings)
@@ -117,7 +121,6 @@ class Command(BaseCommand):
                 claim_result, session, settings,
             )
             if force_publish and session.image_ids != [str(expected_image_id)]:
-                from modules.publishing.services.job_engine import fail_before_dispatch
                 fail_before_dispatch(pipeline_id=pipeline_id, job_id=str(session.publish_job.job_id),
                     claim_token=claim_token, error_code='UNEXPECTED_IMAGE')
                 session.publish_job.state = 'failed'
@@ -153,11 +156,25 @@ class Command(BaseCommand):
             self.stdout.write(f'Worker error: {exc}')
             logger.error('Worker error: %s', exc)
             raise
+        except Exception:
+            logger.exception('Worker failed before or during publishing.')
+            raise
         finally:
+            # Only CLAIMED/READY jobs can be released here. A job that reached
+            # dispatch is never retried without reconciliation.
+            try:
+                fail_before_dispatch(
+                    pipeline_id=pipeline_id, job_id=claim_result['job']['id'],
+                    claim_token=claim_token, error_code='PREFLIGHT_FAILED',
+                    retry_delay_seconds=300,
+                )
+            except (JobEngineError, KeyError):
+                pass
             # Release the concurrency lock
             try:
-                release_running_op(running_op)
-                audit.log_event('running_op_released')
+                if running_op is not None:
+                    release_running_op(running_op)
+                    audit.log_event('running_op_released')
             except WorkerRunningOp.DoesNotExist:
                 pass
             except Exception:
