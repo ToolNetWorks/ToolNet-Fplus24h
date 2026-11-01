@@ -39,6 +39,8 @@ class Command(BaseCommand):
         parser.add_argument('--lease-seconds', type=int, default=600)
         parser.add_argument('--job-id', type=uuid.UUID,
                             help='Process only this specific Job.')
+        parser.add_argument('--expected-image-id', type=uuid.UUID,
+                            help='Require exactly this image for a real post.')
         parser.add_argument('--worker-id',
                             default='fb-worker-' + socket.gethostname().split('.')[0][:30])
         parser.add_argument('--force-publish', action='store_true',
@@ -56,6 +58,8 @@ class Command(BaseCommand):
             raise CommandError('--force-publish cannot be used with --watch.')
         if kwargs['force_publish'] and not kwargs['job_id']:
             raise CommandError('--force-publish requires --job-id.')
+        if kwargs['force_publish'] and not kwargs['expected_image_id']:
+            raise CommandError('--force-publish requires --expected-image-id.')
 
         worker_id = kwargs['worker_id']
         audit = AuditLogger(worker_id=worker_id)
@@ -63,7 +67,7 @@ class Command(BaseCommand):
         if kwargs['once'] or kwargs['force_publish']:
             self._process_one(
                 pipeline_id, worker_id, kwargs['force_publish'], audit,
-                job_id=kwargs['job_id'],
+                job_id=kwargs['job_id'], expected_image_id=kwargs['expected_image_id'],
             )
             return
 
@@ -92,7 +96,7 @@ class Command(BaseCommand):
             return
         self.stdout.write(f"Claimed job: {claim['job']['id']}")
 
-    def _process_one(self, pipeline_id, worker_id, force_publish, audit, job_id=None):
+    def _process_one(self, pipeline_id, worker_id, force_publish, audit, job_id=None, expected_image_id=None):
         """Process a single job claim through the full Worker lifecycle."""
         claim_result = claim_job(
             pipeline_id=pipeline_id, worker_id=worker_id, job_id=job_id,
@@ -135,6 +139,14 @@ class Command(BaseCommand):
             caption, media_info = prepare_media(
                 claim_result, session, settings,
             )
+            if force_publish and session.image_ids != [str(expected_image_id)]:
+                from modules.publishing.services.job_engine import fail_before_dispatch
+                fail_before_dispatch(pipeline_id=pipeline_id, job_id=str(session.publish_job.job_id),
+                    claim_token=claim_token, error_code='UNEXPECTED_IMAGE')
+                session.publish_job.state = 'failed'
+                session.publish_job.error_code = 'UNEXPECTED_IMAGE'
+                session.publish_job.save(update_fields=['state', 'error_code'])
+                raise WorkerError('Job không được cấp đúng ảnh đã chỉ định; chưa gửi.')
             audit.log_event(
                 'media_prepared',
                 images=str(media_info.get('images', [])),
