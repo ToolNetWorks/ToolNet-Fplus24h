@@ -23,7 +23,7 @@ const alertLabels: Record<string, string> = {
 };
 const jobNames: Record<string, string> = {
   queued: "Đang chờ", claimed: "Worker đã nhận", ready: "Đã chuẩn bị",
-  dispatching: "Đang thử đăng", uncertain: "Cần đối soát", published: "Đã đánh dấu xuất bản",
+  dispatching: "Đang thử đăng", submitted: "Đã Đăng Bài (đã nhấn Đăng)", uncertain: "Cần đối soát", published: "Đã đánh dấu xuất bản",
   failed: "Lỗi", cancelled: "Đã hủy",
 };
 

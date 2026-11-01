@@ -13,7 +13,7 @@ import RulesReviewPanel from "./RulesReviewPanel";
 
 const names: Record<JobState, string> = {
   queued: "Đang chờ", claimed: "Worker đang xử lý", ready: "Đã chuẩn bị ảnh",
-  dispatching: "Đang gửi", uncertain: "Chờ đối soát",
+  dispatching: "Đang gửi", submitted: "Đã Đăng Bài (đã nhấn Đăng)", uncertain: "Chờ đối soát",
   published: "Đã đăng", failed: "Lỗi", cancelled: "Đã hủy",
 };
 const input = "w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-blue-500";

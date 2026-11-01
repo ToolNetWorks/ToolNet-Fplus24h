@@ -390,6 +390,22 @@ def _mark_started_tx(*, pipeline_id, request_key):
 
 
 @transaction.atomic
+def mark_click_consumed(*, pipeline_id, request_key):
+    """Retire an image after a completed Post click, without claiming publication."""
+    request_key = _key(request_key)
+    pipeline = _pipeline(pipeline_id)
+    allocation = _allocation(pipeline.pk, request_key)
+    if allocation.state == MediaAllocation.State.CONSUMED:
+        return allocation_payload(allocation)
+    if allocation.state != MediaAllocation.State.UNCERTAIN:
+        raise MediaSelectionError("Chưa đánh dấu bắt đầu đăng hoặc đã hủy.")
+    allocation.state = MediaAllocation.State.CONSUMED
+    allocation.finalized_at = timezone.now()
+    allocation.save(update_fields=["state", "finalized_at", "updated_at"])
+    return allocation_payload(allocation)
+
+
+@transaction.atomic
 def confirm_consumed(*, pipeline_id, request_key):
     """Only after independently verifying external publication succeeded."""
     request_key = _key(request_key)

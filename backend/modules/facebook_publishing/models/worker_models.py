@@ -22,6 +22,7 @@ class WorkerResultState(models.TextChoices):
     ANONYMOUS_ENABLED = 'anonymous_enabled', 'Anonymous Enabled'
     CONTENT_READY = 'content_ready', 'Content Ready'
     SUBMITTING = 'submitting', 'Submitting'
+    SUBMITTED = 'submitted', 'Post button clicked'
     RULES_CONFIRMATION_REQUIRED = 'rules_confirmation_required', 'Rules Confirmation Required'
     RULES_CONFIRMED = 'rules_confirmed', 'Rules Confirmed'
     SUBMITTED_UNVERIFIED = 'submitted_unverified', 'Submitted Unverified'

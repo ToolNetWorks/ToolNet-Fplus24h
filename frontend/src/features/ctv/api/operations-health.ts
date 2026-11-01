@@ -17,7 +17,7 @@ export interface OperationsHealth {
   note: string;
 }
 
-const stateKeys = ["queued", "claimed", "ready", "dispatching", "uncertain", "published", "failed", "cancelled"];
+const stateKeys = ["queued", "claimed", "ready", "dispatching", "submitted", "uncertain", "published", "failed", "cancelled"];
 
 function nonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;

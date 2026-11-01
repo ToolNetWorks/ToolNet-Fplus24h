@@ -67,12 +67,24 @@ from modules.facebook_publishing.services.reconciliation import (
 from modules.facebook_publishing.services.audit_log import AuditLogger
 from modules.publishing.services.job_engine import (
     claim_due_job, prepare_job_media, begin_dispatch,
-    confirm_published, flag_uncertain, fail_before_dispatch,
+    confirm_submit_clicked, confirm_published, flag_uncertain, fail_before_dispatch,
     JobEngineError, JobConflict,
 )
 from modules.publishing.services.media_selection import allocation_payload
 
 logger = logging.getLogger(__name__)
+
+
+@transaction.atomic
+def _record_submit_click(*, pipeline_id, job_id, claim_token, worker_job_id):
+    confirm_submit_clicked(pipeline_id=pipeline_id, job_id=job_id, claim_token=claim_token,
+                           worker_job_id=worker_job_id)
+    worker_job = WorkerPublishJob.objects.select_for_update().get(pk=worker_job_id, job_id=job_id)
+    worker_job.state = WorkerResultState.SUBMITTED
+    worker_job.finalized_at = timezone.now()
+    worker_job.error_code = ''
+    worker_job.error_detail = ''
+    worker_job.save(update_fields=['state', 'finalized_at', 'error_code', 'error_detail'])
 
 
 class WorkerError(Exception):
@@ -834,7 +846,7 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
 
 def run_publish(session, settings: WorkerSettings, eligibility, caption,
                 claim_token, config):
-    """Non-dry-run: submit the post and verify visibility.
+    """Non-dry-run: click Post once and record the click without a visibility claim.
 
     WARNING: This only runs when FACEBOOK_PUBLISHING_ENABLED=true AND
     FACEBOOK_PUBLISHING_DRY_RUN=false.
@@ -993,94 +1005,38 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
             composer.submit_post()
             audit.log_event('post_submitted')
 
-            prompt = inspect_rules_prompt(page)
-            if prompt:
-                outcome = _wait_for_rules_review(session=session, page=page, prompt=prompt, audit=audit)
-                if outcome:
-                    return outcome
-
-            # Step: Verify visibility (never trust HTTP 200 or post_id alone)
-            verification_result = verification.verify_post_visibility()
-            if verification_result.rules_prompt:
-                outcome = _wait_for_rules_review(session=session, page=page,
-                    prompt=verification_result.rules_prompt, audit=audit)
-                if outcome:
-                    return outcome
-                verification_result = verification.verify_post_visibility()
-            # A delayed participation prompt can appear while the feed loads.
-            prompt = inspect_rules_prompt(page)
-            if prompt:
-                # An existing confirmation is single-use. Never submit it again.
+            # Briefly monitor for a participation prompt. Never click Post again.
+            for _ in range(4):
+                prompt = inspect_rules_prompt(page)
+                if prompt:
+                    outcome = _wait_for_rules_review(session=session, page=page, prompt=prompt, audit=audit)
+                    if outcome:
+                        return outcome
+                    break
+                page.wait_for_timeout(1000)
+            if inspect_rules_prompt(page):
                 raise WorkerError('Participation prompt remains after confirmation.')
-            audit.log_event(
-                'verification_result',
-                state=verification_result.state,
-                external_post_id=verification_result.external_post_id,
-            )
 
-            session.publish_job.state = verification_result.state.lower()
-            session.publish_job.external_post_id = verification_result.external_post_id or ''
-            session.publish_job.verified_at = timezone.now()
-            _safe_save(session.publish_job,
-                update_fields=['state', 'external_post_id', 'verified_at']
-            )
-
-            # Step: Cross-check with Job Engine
-            recon = _db_call(reconcile_job_states,
-                pipeline_id=job.pipeline_id,
-                job_id=str(job.job_id),
-                worker_job=session.publish_job,
-                audit=audit,
-            )
-
-            if verification_result.state == 'PUBLISHED':
-                _db_call(confirm_published,
-                    pipeline_id=job.pipeline_id,
-                    job_id=str(job.job_id),
-                    external_post_id=verification_result.external_post_id,
-                )
-                audit.log_transition(
-                    from_state=WorkerResultState.SUBMITTING,
-                    to_state=WorkerResultState.PUBLISHED,
-                )
-                return {
-                    'result': 'published',
-                    'post_id': verification_result.external_post_id,
-                    'detail': verification_result.detail,
-                }
-
-            elif verification_result.state == 'PENDING_APPROVAL':
-                from modules.publishing.services.job_engine import flag_uncertain
-                _db_call(flag_uncertain,
-                    pipeline_id=job.pipeline_id,
-                    job_id=str(job.job_id),
-                    code='PENDING_ADMIN_APPROVAL',
-                )
-                return {
-                    'result': 'pending_approval',
-                    'detail': 'Post requires admin approval.',
-                }
-
-            elif verification_result.state == 'SUBMITTED_UNVERIFIED':
-                from modules.publishing.services.job_engine import flag_uncertain
+            # Recognize an explicit response already on screen without searching
+            # the Group or treating a closed composer as proof of publication.
+            response_text = (page.locator('body').inner_text() or '').lower()
+            if any(text in response_text for text in (
+                    'your post is pending approval', 'your post is pending admin approval',
+                    'bài viết của bạn đang chờ duyệt', 'bài viết của bạn đang chờ phê duyệt')):
                 _db_call(flag_uncertain, pipeline_id=job.pipeline_id,
-                         job_id=str(job.job_id), code='SUBMITTED_UNVERIFIED')
-                return {'result': 'submitted_unverified',
-                        'detail': 'Submission cannot yet be verified; no retry.'}
+                         job_id=str(job.job_id), code='PENDING_ADMIN_APPROVAL')
+                session.publish_job.state = WorkerResultState.PENDING_APPROVAL
+                _safe_save(session.publish_job, update_fields=['state'])
+                return {'result': 'pending_approval', 'detail': 'Facebook reports pending approval.'}
 
-            else:
-                _db_call(safe_transition_to_uncertain,
-                    pipeline_id=job.pipeline_id,
-                    job_id=str(job.job_id),
-                    worker_job=session.publish_job,
-                    claim_token=claim_token,
-                    error_code='VERIFICATION_FAILED',
-                    audit=audit,
-                )
-                return {
-                    'result': 'uncertain',
-                    'detail': 'Visibility not verified. Not resending.',
-                }
+            # This records only that Playwright completed the click, not that
+            # Facebook accepted or made the post visible.
+            _db_call(_record_submit_click, pipeline_id=job.pipeline_id,
+                     job_id=str(job.job_id), claim_token=claim_token,
+                     worker_job_id=session.publish_job.pk)
+            audit.log_event('post_click_recorded', visibility_verified=False)
+            return {'result': 'submitted',
+                    'detail': 'Post button clicked; Facebook visibility was not checked.'}
 
         finally:
             if stager:

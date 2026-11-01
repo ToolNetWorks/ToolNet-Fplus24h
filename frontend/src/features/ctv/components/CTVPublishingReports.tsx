@@ -29,7 +29,7 @@ const skipReasons: Record<string, string> = {
 };
 const stateLabels: Record<string, string> = {
   queued: "Đã tạo hàng đợi", claimed: "Worker đã nhận", ready: "Đã chuẩn bị",
-  dispatching: "Đang gửi", uncertain: "Chưa rõ kết quả", published: "Đã xác minh đăng",
+  dispatching: "Đang gửi", submitted: "Đã Đăng Bài (đã nhấn Đăng)", uncertain: "Chưa rõ kết quả", published: "Đã xác minh đăng",
   failed: "Lỗi", cancelled: "Đã hủy",
 };
 const formatDate = (value: string | undefined | null) => value ?

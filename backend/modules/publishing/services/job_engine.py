@@ -265,6 +265,39 @@ def begin_dispatch(*, pipeline_id, job_id, claim_token):
 
 
 @transaction.atomic
+def confirm_submit_clicked(*, pipeline_id, job_id, claim_token, worker_job_id=None):
+    """Record one completed Post click; this does not attest Facebook visibility."""
+    _pipeline(pipeline_id)
+    job = _job(pipeline_id, job_id)
+    if job.state == PublishingJob.State.UNCERTAIN:
+        from modules.facebook_publishing.models import RulesReview
+        if (job.error_code != 'RULES_CONFIRMATION_REQUIRED' or not worker_job_id or
+                not RulesReview.objects.filter(worker_job_id=worker_job_id,
+                    worker_job__job=job, state=RulesReview.State.SUBMITTED,
+                    decided_by__isnull=False, decided_at__isnull=False,
+                    submit_started_at__isnull=False).exists()):
+            raise JobConflict("Job cần đối soát trước khi cập nhật.")
+    else:
+        _validate_claim(job, claim_token, {PublishingJob.State.DISPATCHING})
+    if not job.media_allocation_id:
+        raise JobConflict("Job chưa có cấp phát ảnh.")
+    media_selection.mark_click_consumed(pipeline_id=job.pipeline_id,
+                                        request_key=job.media_allocation.request_key)
+    job.state = PublishingJob.State.SUBMITTED
+    job.error_code = ""
+    job.finalized_at = timezone.now()
+    job.claim_token = ""
+    job.worker_id = ""
+    job.lease_expires_at = None
+    job.save()
+    attempt = _attempt(job)
+    attempt.state = PublishingAttempt.State.SUBMITTED
+    attempt.finalized_at = job.finalized_at
+    attempt.save()
+    return _snapshot(job)
+
+
+@transaction.atomic
 def confirm_published(*, pipeline_id, job_id, external_post_id):
     """Trusted adapter ONLY after independently verifying external post ID."""
     if not isinstance(external_post_id, str) or not EXTERNAL_RE.fullmatch(external_post_id):
@@ -275,7 +308,8 @@ def confirm_published(*, pipeline_id, job_id, external_post_id):
         if job.external_post_id != external_post_id:
             raise JobConflict("Job đã xác minh với bài đăng khác.")
         return _snapshot(job)
-    if job.state not in (PublishingJob.State.DISPATCHING, PublishingJob.State.UNCERTAIN):
+    if job.state not in (PublishingJob.State.DISPATCHING, PublishingJob.State.UNCERTAIN,
+                         PublishingJob.State.SUBMITTED):
         raise JobConflict("Job chưa được phép bắt đầu đăng.")
     if not job.media_allocation_id:
         raise JobConflict("Job chưa có cấp phát ảnh.")

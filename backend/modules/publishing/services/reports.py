@@ -27,7 +27,7 @@ from modules.publishing.scheduler_models import (
 from modules.publishing.scheduler_tick_models import SchedulerTickAudit
 
 JOB_STATES = (
-    'queued', 'claimed', 'ready', 'dispatching',
+    'queued', 'claimed', 'ready', 'dispatching', 'submitted',
     'uncertain', 'published', 'failed', 'cancelled',
 )
 VERIFIED = Q(state='published') & ~Q(external_post_id='')

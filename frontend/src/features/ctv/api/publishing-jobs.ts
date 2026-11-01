@@ -2,7 +2,7 @@ import { getCsrfToken } from "@/features/auth/api/auth-client";
 
 export type JobState =
   | "queued" | "claimed" | "ready" | "dispatching"
-  | "uncertain" | "published" | "failed" | "cancelled";
+  | "submitted" | "uncertain" | "published" | "failed" | "cancelled";
 export interface PublishingJob {
   id: string;
   pipeline_id: string;

@@ -10,7 +10,7 @@ export interface ReportFilters {
 }
 
 export type ReportJobState = "queued" | "claimed" | "ready" | "dispatching" |
-  "uncertain" | "published" | "failed" | "cancelled";
+  "submitted" | "uncertain" | "published" | "failed" | "cancelled";
 
 export type ReportJobs = Record<ReportJobState, number> & {
   total: number;

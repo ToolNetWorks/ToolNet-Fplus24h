@@ -166,8 +166,8 @@ class PipelineAlbumSource(models.Model):
 class MediaAllocation(models.Model):
     """Idempotent image lease for one future publishing job.
 
-    Publishing must confirm an allocation *only after* the external post
-    is verified. An uncertain result must never be silently released.
+    A completed Post click can consume an image without proving publication.
+    An uncertain click must never be silently released.
     No Facebook operations are implemented here.
     """
 
@@ -323,6 +323,7 @@ class PublishingJob(models.Model):
         CLAIMED = "claimed", "Worker đã nhận"
         READY = "ready", "Đã chuẩn bị ảnh"
         DISPATCHING = "dispatching", "Đã cho phép thử đăng"
+        SUBMITTED = "submitted", "Đã Đăng Bài (đã nhấn Đăng)"
         UNCERTAIN = "uncertain", "Chờ đối soát"
         PUBLISHED = "published", "Đã xác minh đăng thành công"
         FAILED = "failed", "Lỗi trước khi đăng"
@@ -432,6 +433,7 @@ class PublishingAttempt(models.Model):
         CLAIMED = "claimed", "Đã nhận"
         READY = "ready", "Có ảnh"
         DISPATCHING = "dispatching", "Đã bắt đầu thử đăng"
+        SUBMITTED = "submitted", "Đã nhấn Đăng"
         UNCERTAIN = "uncertain", "Cần đối soát"
         PUBLISHED = "published", "Đã xác minh"
         RELEASED = "released", "Đã giải phóng trước khi đăng"
