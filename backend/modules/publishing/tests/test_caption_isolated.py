@@ -169,6 +169,19 @@ class CaptionEngineServiceTest(TestCase):
             )
 
     @patch('modules.publishing.services.caption_engine._provider')
+    def test_generated_caption_does_not_expose_destination_placeholder(self, mock_provider):
+        mock_provider.return_value = ('Nội dung có ý nghĩa. Liên hệ [TRANG_DICH]', 'test-model')
+        update_settings(pipeline_id=self.pipeline.pk, actor=self.admin, destination='@hiu9h',
+                        enabled=True, auto_generate=False, auto_approve=False, writing_guidance='')
+        create_sample(pipeline_id=self.pipeline.pk, actor=self.ctv, text='Nội dung mẫu để tạo bài viết.')
+        job = PublishingJob.objects.create(pipeline=self.pipeline, facebook_account=self.account,
+            facebook_group=self.group, request_key='test-masked-placeholder',
+            state=PublishingJob.State.QUEUED, scheduled_at=timezone.now(), next_run_at=timezone.now())
+        result = generate_job_caption(pipeline_id=self.pipeline.pk, job_id=job.pk, actor=self.ctv)
+        self.assertNotIn('[TRANG_DICH]', result['text'])
+        self.assertEqual(result['text'], 'Nội dung có ý nghĩa.\n\nLiên hệ: @hiu9h')
+
+    @patch('modules.publishing.services.caption_engine._provider')
     def test_generate_job_caption(self, mock_provider):
         """Test generating caption for a job."""
         mock_provider.return_value = (

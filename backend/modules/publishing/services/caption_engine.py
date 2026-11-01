@@ -232,6 +232,10 @@ def generate_job_caption(*, pipeline_id, job_id, actor=None):
         prompt = _inputs(pipeline_id=pipeline.pk, job=job, settings=cfg)
     try:
         raw, model = _provider(prompt)
+        # Samples mask the locked handle with this internal marker; providers
+        # sometimes echo it. Never persist it in a newly generated caption.
+        if isinstance(raw, str):
+            raw = re.sub(r'\[\s*TRANG_DICH\s*\]', '', raw, flags=re.I)
         caption = finalize_caption(raw, destination)
     except CaptionError:
         with transaction.atomic():
