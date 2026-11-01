@@ -151,14 +151,15 @@ def integrity_snapshot(*, pipeline_id, sample_limit=250, now=None):
         if any(x != pipeline_id for x in (
             assignment.batch.pipeline_id, assignment.job.pipeline_id,
             assignment.account.pipeline_id, assignment.group.pipeline_id,
-            assignment.proxy.pipeline_id,
-        )):
+        )) or (assignment.proxy_id and assignment.proxy.pipeline_id != pipeline_id):
             issue('ASSIGNMENT_FOREIGN_RESOURCE', 'assignment', assignment)
         if (assignment.job.facebook_account_id != assignment.account_id
                 or assignment.job.facebook_group_id != assignment.group_id):
             issue('ASSIGNMENT_JOB_IDENTITY_MISMATCH', 'assignment', assignment)
-        if assignment.proxy.account_id != assignment.account_id:
+        if assignment.proxy_id and assignment.proxy.account_id != assignment.account_id:
             issue('ASSIGNMENT_PROXY_ACCOUNT_MISMATCH', 'assignment', assignment)
+        if bool(assignment.proxy_id) != bool(assignment.exit_ip_snapshot):
+            issue('ASSIGNMENT_PROXY_EXIT_MISMATCH', 'assignment', assignment)
 
     for reference in sample('submissions', PostSubmissionReference.objects.filter(
         pipeline_id=pipeline_id,

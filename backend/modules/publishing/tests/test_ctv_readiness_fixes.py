@@ -77,6 +77,10 @@ class DirectSchedulerTests(FacebookPublishingWorkerTestBase):
         self.assertIsNone(assignment.proxy_id)
         self.assertIsNone(assignment.exit_ip_snapshot)
         self.assertTrue(AccountProxyPin.objects.filter(pk=self.pin.pk, proxy=self.proxy).exists())
+        from modules.publishing.services.integrity_audit import integrity_snapshot
+        audit = integrity_snapshot(pipeline_id=self.pipeline.pk)
+        self.assertEqual(audit['scanned']['assignments'], 1)
+        self.assertNotIn('ASSIGNMENT_FOREIGN_RESOURCE', [f['code'] for f in audit['findings']])
         self.assertEqual(plan_schedule(schedule_id=self.schedule.pk, commit=True)['status'], 'not_due')
 
     def test_direct_missing_cookie_does_not_schedule(self):
