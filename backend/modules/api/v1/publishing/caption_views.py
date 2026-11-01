@@ -19,14 +19,17 @@ from modules.publishing.services.caption_engine import (
 
 
 class CaptionReadThrottle(UserRateThrottle):
+    scope = 'caption_read'
     rate = '30/min'
 
 
 class CaptionWriteThrottle(UserRateThrottle):
+    scope = 'caption_write'
     rate = '10/min'
 
 
 class CaptionGenerateThrottle(UserRateThrottle):
+    scope = 'caption_generate'
     rate = '4/min'
 
 
@@ -172,6 +175,13 @@ class CaptionJobAPIView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [JSONParser]
     throttle_classes = [CaptionGenerateThrottle]
+
+    def get_throttles(self):
+        if self.request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return [CaptionReadThrottle()]
+        if isinstance(self.request.data, dict) and self.request.data.get('action') in ('approve', 'reject'):
+            return [CaptionWriteThrottle()]
+        return [CaptionGenerateThrottle()]
 
     def get(self, request, pipeline_id, job_id):
         pipe = resolve_pipeline(request.user, pipeline_id)
