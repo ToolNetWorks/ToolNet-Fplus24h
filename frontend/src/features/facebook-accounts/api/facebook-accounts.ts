@@ -134,3 +134,16 @@ export async function replaceFacebookCookie(pipelineId: string, accountId: strin
   const data = await readApiResponse(response);
   if (data.success !== true) throw new Error('Không thể cập nhật cookie.');
 }
+
+export async function verifyFacebookSession(pipelineId: string, accountId: string): Promise<{ result: string; message: string }> {
+  const csrfToken = await getCsrfToken();
+  const response = await fetch(
+    `/api/v1/pipelines/${encodeURIComponent(pipelineId)}/facebook-accounts/${encodeURIComponent(accountId)}/verify-session/`,
+    { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': csrfToken } },
+  );
+  const data = await readApiResponse(response);
+  if (data.success !== true || typeof data.result !== 'string' || typeof data.message !== 'string') {
+    throw new Error('Không thể kiểm tra phiên Facebook.');
+  }
+  return { result: data.result, message: data.message };
+}

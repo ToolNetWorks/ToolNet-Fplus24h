@@ -18,6 +18,7 @@ import {
 import {
   uploadFacebookCookie,
   replaceFacebookCookie,
+  verifyFacebookSession,
   type FacebookAccount,
   type ConnectionStatus,
 } from "@/features/facebook-accounts/api/facebook-accounts";
@@ -146,6 +147,8 @@ export default function CTVAccountsTable({
   const [profileUrl, setProfileUrl] = useState("");
   const [cookieFile, setCookieFile] = useState<File | null>(null);
   const [replacingAccount, setReplacingAccount] = useState<string | null>(null);
+  const [verifyingAccount, setVerifyingAccount] = useState<string | null>(null);
+  const [verificationResults, setVerificationResults] = useState<Record<string, { result: string; message: string }>>({});
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [success, setSuccess] = useState("");
@@ -249,10 +252,28 @@ export default function CTVAccountsTable({
     setReplacingAccount(account.id); setError(''); setSuccess('');
     try {
       await replaceFacebookCookie(pipelineId, account.id, file);
+      setVerificationResults((current) => {
+        const next = { ...current }; delete next[account.id]; return next;
+      });
       setSuccess('Đã cập nhật cookie cho tài khoản; phiên Facebook vẫn cần được xác minh.');
       refresh();
     } catch (cause) { setError(message(cause)); }
     finally { setReplacingAccount(null); }
+  }
+
+  async function handleVerify(account: Account) {
+    if (verifyingAccount) return;
+    setVerifyingAccount(account.id);
+    setError(''); setSuccess('');
+    try {
+      const outcome = await verifyFacebookSession(pipelineId, account.id);
+      setVerificationResults((current) => ({ ...current, [account.id]: outcome }));
+      refresh();
+    } catch (cause) {
+      setVerificationResults((current) => ({ ...current, [account.id]: { result: 'error', message: message(cause) } }));
+    } finally {
+      setVerifyingAccount(null);
+    }
   }
 
   return (
@@ -552,10 +573,19 @@ export default function CTVAccountsTable({
                           {labels[account.connection_status]}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-slate-400">
-                        Chưa có tác vụ
+                      <td className="px-3 py-2.5" aria-live="polite">
+                        {verificationResults[account.id] ? (
+                          <span className={verificationResults[account.id].result === 'verified' ? 'text-emerald-700' : 'text-amber-700'}>
+                            {verificationResults[account.id].message}
+                          </span>
+                        ) : <span className="text-slate-400">Chưa kiểm tra trong lượt này</span>}
                       </td>
                       <td className="px-3 py-2.5 text-slate-400">
+                        <button type="button" onClick={() => void handleVerify(account)}
+                          disabled={!!verifyingAccount || !!replacingAccount || account.connection_status === 'disabled'}
+                          className="mr-2 inline-flex items-center gap-1 rounded border px-2 py-1 text-blue-700 disabled:opacity-50">
+                          <RefreshCw size={14} /> {verifyingAccount === account.id ? 'Đang kiểm tra...' : 'Kiểm tra cookie'}
+                        </button>
                         <label className="inline-flex cursor-pointer items-center gap-1 rounded border px-2 py-1 text-slate-700">
                           <Upload size={14} /> {replacingAccount === account.id ? 'Đang lưu...' : 'Cập nhật cookie'}
                           <input type="file" accept=".json,application/json" className="sr-only"
