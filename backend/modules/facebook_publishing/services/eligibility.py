@@ -4,6 +4,7 @@ Verifies that an Account is authorized to post anonymously to a Group.
 Does NOT auto-join Groups. Does NOT bypass any checkpoints.
 """
 from dataclasses import dataclass
+from django.utils import timezone
 
 from modules.facebook_accounts.models import FacebookAccount
 from modules.facebook_groups.models import FacebookGroup
@@ -78,6 +79,9 @@ def check_group_eligibility(*, pipeline_id, account_id, group_id):
     eligibility = AccountGroupEligibility.objects.filter(
         pipeline_id=pipeline_id, account_id=account_id, group_id=group_id,
         state=AccountGroupEligibility.State.VERIFIED,
+        verified_at__lte=timezone.now(), expires_at__gt=timezone.now(),
+    ).exclude(
+        evidence_note='',
     ).first()
 
     if eligibility is None:

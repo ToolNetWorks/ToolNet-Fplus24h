@@ -6,6 +6,7 @@ then deletes the temp file after processing. Never leaves temp images on disk.
 import hashlib
 import os
 import tempfile
+from uuid import UUID
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -50,6 +51,10 @@ class MediaStager:
 
     def stage_image(self, *, pipeline_id, image_id):
         """Download a single AlbumImage to a temp file."""
+        try:
+            image_id = UUID(str(image_id))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise MediaStagingError('Invalid AlbumImage ID.') from exc
         image = AlbumImage.objects.filter(
             pk=image_id, album__pipeline_id=pipeline_id,
             upload_status=AlbumImage.UploadStatus.READY,

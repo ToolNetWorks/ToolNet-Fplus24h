@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
+import AlbumFilePicker from "@/features/albums/components/AlbumFilePicker";
 import {
   ArrowDown, ArrowLeft, ArrowUp, ChevronLeft, ChevronRight,
   GripVertical, ImageIcon, RefreshCw, Trash2, Upload,
@@ -28,10 +29,8 @@ export default function CTVAlbumImages({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [filePreviews, setFilePreviews] = useState<Array<{file: File, preview: string, size: string, error?: string}>>([]);
   const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
   const [busy, setBusy] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const dragId = useRef<string | null>(null);
 
   const refresh = () => setVersion((v) => v + 1);
@@ -56,52 +55,6 @@ export default function CTVAlbumImages({
     return () => controller.abort();
   }, [pipelineId, album.id, page, version]);
 
-  useEffect(() => {
-    const currentFiles = files;
-    if (currentFiles.length === 0) {
-      setFilePreviews([]);
-      return;
-    }
-    let cancelled = false;
-    const previews: Array<{file: File, preview: string, size: string, error?: string}> = [];
-    let completed = 0;
-    const total = currentFiles.length;
-
-    const checkDone = () => {
-      completed++;
-      if (completed === total && !cancelled) {
-        setFilePreviews(previews);
-      }
-    };
-
-    currentFiles.forEach((file, index) => {
-      const reader = new FileReader();
-      const size = (file.size / 1024 / 1024).toFixed(2) + " MB";
-      reader.onload = (e) => {
-        previews[index] = {
-          file,
-          preview: e.target?.result as string,
-          size,
-        };
-        checkDone();
-      };
-      reader.onerror = () => {
-        previews[index] = {
-          file,
-          preview: "",
-          size,
-          error: "Không thể đọc file",
-        };
-        checkDone();
-      };
-      reader.readAsDataURL(file);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [files]);
-
    async function upload(event: FormEvent<HTMLFormElement>) {
      event.preventDefault();
      if (busy || !album.is_enabled || files.length < 1 || files.length > 5) return;
@@ -123,8 +76,6 @@ export default function CTVAlbumImages({
        
        setNotice(`Đã upload ${uploaded.length} ảnh lên R2.`);
        setFiles([]);
-       setFilePreviews([]);
-       if (fileInputRef.current) fileInputRef.current.value = "";
        onChanged();
        const total = (result?.pagination.total ?? 0) + uploaded.length;
        const finalPage = Math.max(1, Math.ceil(total / 20));
@@ -133,38 +84,6 @@ export default function CTVAlbumImages({
      } catch (cause) { setError(message(cause)); }
      finally { setBusy(false); setUploadProgress({}); }
    }
-
-  // Enhanced file removal with cleanup
-  const removeFile = (index: number) => {
-    setFilePreviews(prev => prev.filter((_, i) => i !== index));
-    setFiles(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // File selection handler for iPhone-friendly interface
-  const selectFiles = () => {
-    fileInputRef.current?.click();
-  };
-
-  // Drag and drop handlers
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    const validFiles = droppedFiles.filter(file => 
-      file.type.startsWith('image/') && 
-      file.size <= 10 * 1024 * 1024
-    );
-    
-    if (validFiles.length !== droppedFiles.length) {
-      setError("Một số file không hợp lệ. Chỉ chấp nhận ảnh (JPEG, PNG, WebP) và tối đa 10MB mỗi file.");
-    }
-    
-    setFiles(prev => [...prev, ...validFiles].slice(0, 5));
-    setError("");
-  };
 
   async function remove(image: AlbumImage) {
     if (busy) return;
@@ -227,76 +146,10 @@ export default function CTVAlbumImages({
       {notice && <p role="status" className="rounded-md bg-blue-50 p-3 text-xs text-blue-800">{notice}</p>}
       {error && <p role="alert" className="rounded-md bg-red-50 p-3 text-xs text-red-700">{error}</p>}
       
-      {/* Upload Area with iPhone-friendly button */}
-      <div className="space-y-3 rounded-lg bg-slate-50 p-4" onDragOver={handleDragOver} onDrop={handleDrop}>
-        <label className="block text-xs font-semibold">Upload ảnh lên Cloudflare R2</label>
-        
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept="image/*"
-          capture="environment"
-          disabled={busy || !album.is_enabled}
-          onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-          className="hidden"
-          id="ctv-album-upload-hidden"
-        />
-        
-        {/* iPhone-friendly upload button */}
-        <button
-          type="button"
-          onClick={selectFiles}
-          disabled={busy || !album.is_enabled}
-          className="w-full rounded-lg border-2 border-dashed border-slate-300 bg-white p-6 transition-colors hover:border-blue-400 hover:bg-blue-50 disabled:opacity-50"
-        >
-          <div className="flex flex-col items-center gap-2">
-            <Upload size={24} className="text-slate-400" />
-            <span className="text-sm font-medium text-slate-700">Chọn ảnh từ thiết bị</span>
-            <span className="text-xs text-slate-500">JPEG, PNG, WebP . 1-5 ảnh/lần . tối đa 10 MB/ảnh</span>
-            {files.length > 0 && (
-              <span className="text-xs text-blue-600">{files.length} ảnh đã chọn</span>
-            )}
-          </div>
-        </button>
-        
-        {/* File Previews */}
-        {filePreviews.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-xs font-medium text-slate-700">Preview files:</h4>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              {filePreviews.map((item, index) => (
-                <div key={index} className="relative group">
-                  <div className="aspect-square rounded border border-slate-200 bg-slate-50 overflow-hidden">
-                    {item.preview ? (
-                      <img src={item.preview} alt={item.file.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <ImageIcon size={20} className="text-slate-400" />
-                      </div>
-                    )
-                    }
-                  </div>
-                  <div className="mt-1 space-y-1">
-                    <p title={item.file.name} className="text-xs font-medium truncate">{item.file.name}</p>
-                    <p className="text-[10px] text-slate-500">{item.size}</p>
-                    {item.error && <p className="text-[10px] text-red-600">{item.error}</p>}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeFile(index)}
-                    className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs hover:bg-red-600"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-        }
-        
+      <div className="space-y-3 rounded-lg bg-slate-50 p-4">
+        <p className="text-xs font-semibold">Upload ảnh lên Cloudflare R2</p>
+        <AlbumFilePicker files={files} onChange={setFiles} disabled={busy || !album.is_enabled} />
+
          {/* Upload Progress */}
          {Object.keys(uploadProgress).length > 0 && (
            <div className="space-y-2">

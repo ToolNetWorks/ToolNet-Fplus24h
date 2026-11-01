@@ -7,6 +7,8 @@ Playwright to publish anonymously.
 In DRY_RUN mode, the Worker validates everything but never clicks Post.
 """
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Optional
 from asgiref.sync import sync_to_async
@@ -15,12 +17,25 @@ from django.db import transaction
 from django.utils import timezone
 
 
-def _safe_save(model_instance, **kwargs):
-    """Save a model instance, handling async context issues after Playwright."""
+def _db_call(func, *args, **kwargs):
+    """Run ORM work in a separate thread while Playwright owns this thread's loop."""
     try:
-        model_instance.save(**kwargs)
-    except Exception:
-        pass  # DB write may fail after Playwright; state will be stale
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return func(*args, **kwargs)
+    from django.db import close_old_connections
+    def invoke():
+        try:
+            return func(*args, **kwargs)
+        finally:
+            close_old_connections()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(invoke).result()
+
+
+def _safe_save(model_instance, **kwargs):
+    """Persist state or raise; never silently lose a publishing state change."""
+    return _db_call(model_instance.save, **kwargs)
 
 from modules.facebook_publishing.models import (
     WorkerConfig, WorkerPublishJob, WorkerRunningOp, WorkerResultState,
@@ -45,6 +60,7 @@ from modules.facebook_publishing.services.composer import (
 from modules.facebook_publishing.services.verification import (
     PublishingVerification, VerificationResult,
 )
+from modules.facebook_publishing.services.rules_confirmation import inspect_rules_prompt, find_rules_prompt, response_fields
 from modules.facebook_publishing.services.reconciliation import (
     reconcile_job_states, safe_transition_to_uncertain,
 )
@@ -69,6 +85,99 @@ class WorkerNotEnabledError(WorkerError):
 
 class WorkerConcurrencyError(WorkerError):
     pass
+
+
+def _wait_for_rules_review(*, session, page, prompt, audit):
+    """Keep this browser alive for an authenticated, single-use decision."""
+    import re
+    from datetime import timedelta
+    from modules.facebook_publishing.models import RulesReview
+    from modules.facebook_publishing.services.rules_review import (
+        create_review, poll_review, consume_approval, finish_review, stop_review, RulesReviewConflict,
+    )
+    review_id = _db_call(create_review, worker_id=session.publish_job.pk,
+                        prompt=prompt, expires_at=timezone.now() + timedelta(minutes=10))
+    audit.log_event('rules_confirmation_required', review_id=str(review_id),
+                    checkbox_count=prompt.checkbox_count,
+                    response_field_count=prompt.response_field_count)
+    try:
+        missing_prompt_checks = 0
+        while True:
+            state, expires_at = _db_call(poll_review, review_id=review_id,
+                                         worker_job_id=session.publish_job.pk)
+            if state == RulesReview.State.REJECTED:
+                _db_call(stop_review, review_id=review_id)
+                return {'result': 'rules_rejected', 'detail': 'Người dùng từ chối; không gửi lại.'}
+            if expires_at <= timezone.now():
+                _db_call(stop_review, review_id=review_id, expired=True)
+                return {'result': 'uncertain', 'detail': 'Phiên xác nhận hết hạn; cần đối soát.'}
+            if state == RulesReview.State.APPROVED:
+                break
+            if state != RulesReview.State.PENDING:
+                raise RulesReviewConflict('Yêu cầu xác nhận không còn chờ.')
+            if page.is_closed():
+                _db_call(stop_review, review_id=review_id, expired=True)
+                return {'result': 'uncertain', 'detail': 'Phiên browser đã đóng; cần đối soát.'}
+            # A changed or vanished prompt can mean expiry or a checkpoint.
+            # Never recreate the composer or assume that an earlier post failed.
+            found = find_rules_prompt(page)
+            missing_prompt_checks = 0 if found else missing_prompt_checks + 1
+            if missing_prompt_checks >= 3:
+                _db_call(stop_review, review_id=review_id, expired=True)
+                return {'result': 'uncertain', 'detail': 'Phiên xác nhận không còn hiển thị; cần đối soát.'}
+            page.wait_for_timeout(1000)
+
+        current = inspect_rules_prompt(page)
+        if (not current or current.digest != prompt.digest or current.questions != prompt.questions or
+                current.checkbox_count != prompt.checkbox_count):
+            raise RulesReviewConflict('Nội dung Facebook đã thay đổi hoặc cần câu trả lời.')
+        found = find_rules_prompt(page)
+        if not found:
+            raise RulesReviewConflict('Không còn màn hình quy tắc.')
+        dialog, _ = found
+        checkboxes = dialog.get_by_role('checkbox')
+        # Only explicitly labelled rule-agreement controls can be selected.
+        agreement = re.compile(r'^(tôi (đã đọc và )?đồng ý.*quy tắc.*|đồng ý.*quy tắc.*|i (have read and )?agree.*rules.*|agree.*rules.*)$', re.I)
+        for i in range(checkboxes.count()):
+            item = checkboxes.nth(i)
+            if not item.is_visible() or not item.is_enabled():
+                raise RulesReviewConflict('Không xác minh được checkbox quy tắc.')
+            if not item.is_checked():
+                label = item.evaluate("e => e.labels?.[0]?.innerText || e.getAttribute('aria-label') || e.closest('label')?.innerText || ''")
+                if not agreement.fullmatch(' '.join(label.split())):
+                    raise RulesReviewConflict('Checkbox không phải xác nhận quy tắc rõ ràng.')
+        submit = dialog.get_by_role('button', name=re.compile(r'^(gửi|submit|send)$', re.I))
+        if submit.count() != 1 or not submit.first.is_visible():
+            raise RulesReviewConflict('Không tìm thấy nút Gửi duy nhất.')
+        # Commit consumption before any irreversible click; crashes never retry.
+        answers = _db_call(consume_approval, review_id=review_id, digest=current.digest)
+        fields = response_fields(dialog)
+        visible_fields = [fields.nth(i) for i in range(fields.count()) if fields.nth(i).is_visible()]
+        if len(visible_fields) != len(answers):
+            raise RulesReviewConflict('Danh sách câu hỏi đã thay đổi.')
+        for field, answer in zip(visible_fields, answers):
+            field.fill(answer, timeout=5000)
+            if field.input_value() != answer:
+                raise RulesReviewConflict('Không thể xác minh câu trả lời.')
+        for i in range(checkboxes.count()):
+            item = checkboxes.nth(i)
+            if not item.is_checked():
+                item.check(timeout=5000)
+        latest = inspect_rules_prompt(page)
+        if (not latest or latest.digest != prompt.digest or latest.response_field_count != prompt.response_field_count or
+                latest.checkbox_count != prompt.checkbox_count or
+                latest.checked_count != latest.checkbox_count):
+            raise RulesReviewConflict('Quy tắc hoặc trạng thái checkbox đã thay đổi.')
+        if not submit.first.is_enabled():
+            raise RulesReviewConflict('Facebook chưa cho phép gửi quy tắc.')
+        submit.first.click(timeout=10000)
+        page.wait_for_timeout(1000)
+        _db_call(finish_review, review_id=review_id, state=RulesReview.State.SUBMITTED)
+        audit.log_event('rules_submit_attempted', review_id=str(review_id))
+        return None
+    except Exception:
+        _db_call(finish_review, review_id=review_id, state=RulesReview.State.UNCERTAIN)
+        raise
 
 
 @dataclass
@@ -134,7 +243,7 @@ def _create_publish_job_record(*, pipeline_id, job, worker_id, settings,
     """Create the WorkerPublishJob record, initialized to QUEUED."""
     # Only use account.assigned_proxy if proxy not provided and we're in proxy mode
     final_proxy = proxy
-    if proxy is None:
+    if proxy is None and settings.use_proxy:
         try:
             final_proxy = account.assigned_proxy
         except Exception:
@@ -154,7 +263,7 @@ def _create_publish_job_record(*, pipeline_id, job, worker_id, settings,
     return worker_job
 
 
-def claim_job(*, pipeline_id, worker_id, lease_seconds=600):
+def claim_job(*, pipeline_id, worker_id, lease_seconds=600, job_id=None):
     """Claim a due PublishingJob via the Job Engine.
 
     Returns the claim snapshot and WorkerPublishJob record, or None if no job.
@@ -166,7 +275,8 @@ def claim_job(*, pipeline_id, worker_id, lease_seconds=600):
         logger.info('Worker is in DRY_RUN mode for Pipeline %s.', pipeline_id)
 
     claim = claim_due_job(
-        pipeline_id=pipeline_id, worker_id=worker_id,
+        pipeline_id=pipeline_id, worker_id=worker_id, lease_seconds=lease_seconds,
+        job_id=job_id,
     )
     if claim is None:
         return None
@@ -421,6 +531,8 @@ def prepare_media(claim_result, session, settings: WorkerSettings):
         job_id=str(job.pk),
         claim_token=claim_token,
     )
+    job.refresh_from_db(fields=['media_allocation'])
+    prepared = allocation_payload(job.media_allocation)
 
     # Extract image IDs from the allocation payload
     image_ids = _resolve_media_image_ids(
@@ -465,7 +577,7 @@ def launch_browser(session, settings: WorkerSettings, audit=None) -> BrowserMana
         session.page = context.new_page()
 
         if not cookies_loaded:
-            session.publish_job.add_audit(
+            _db_call(session.publish_job.add_audit,
                 'warning', 'No encrypted cookies found for account.',
             )
 
@@ -541,9 +653,12 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
         audit.log_event('navigated_to_group_dry_run')
 
         # Step 4: Open the composer
-        composer = AnonymousComposer(page, settings)
+        composer = AnonymousComposer(page, settings, session.bundle.account.label)
         composer.open_composer()
         audit.log_event('composer_opened_dry_run')
+
+        composer.open_author_menu()
+        audit.log_event('author_menu_opened_dry_run')
 
         # Step 5: Check anonymous posting permission inside composer
         anon_available = composer.check_anonymous_posting_available()
@@ -565,7 +680,7 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
             # Release the job back to QUEUED for possible retry
             from modules.publishing.services.job_engine import fail_before_dispatch
             try:
-                fail_before_dispatch(
+                _db_call(fail_before_dispatch,
                     pipeline_id=session.publish_job.pipeline_id,
                     job_id=str(session.publish_job.job_id),
                     claim_token=claim_result['claim_token'],
@@ -593,7 +708,7 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
             success=anon_result.success,
             detail=anon_result.detail,
         )
-        if not anon_result.success and anon_result.detail == 'ANONYMOUS_UI_UNCONFIRMED':
+        if not anon_result.success:
             worker_job = session.publish_job
             worker_job.state = WorkerResultState.FAILED
             worker_job.error_code = 'ANONYMOUS_UI_UNCONFIRMED'
@@ -605,7 +720,7 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
             )
             from modules.publishing.services.job_engine import fail_before_dispatch
             try:
-                fail_before_dispatch(
+                _db_call(fail_before_dispatch,
                     pipeline_id=session.publish_job.pipeline_id,
                     job_id=str(session.publish_job.job_id),
                     claim_token=claim_result['claim_token'],
@@ -630,17 +745,21 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
             'anonymous_author_verified',
             enabled=anon_enabled,
         )
+        if not anon_enabled:
+            raise WorkerError('Anonymous author could not be verified.')
 
-        # Step 7: Fill caption (within authorized environment, but do NOT submit)
+        session.publish_job.state = WorkerResultState.ANONYMOUS_ENABLED
+        _safe_save(session.publish_job, update_fields=['state'])
+
         composer.fill_caption(caption)
         audit.log_event('caption_filled_dry_run', length=len(caption))
-
-        # Step 8: Verify image can be downloaded from R2
+        # Stage and verify the image without submitting.
         images_downloaded = 0
         stager = MediaStager(settings)
+        staged = []
         try:
             if session.image_ids:
-                staged = stager.stage_all(
+                staged = _db_call(stager.stage_all,
                     pipeline_id=session.publish_job.pipeline_id,
                     image_ids=session.image_ids,
                 )
@@ -648,12 +767,12 @@ def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
                 audit.log_event(
                     'images_downloaded_dry_run', count=images_downloaded,
                 )
-                # Attach images to page for verification (but don't submit)
                 for img in staged:
-                    try:
-                        composer.attach_image(img.temp_path)
-                    except Exception:
-                        pass
+                    composer.attach_image(img.temp_path)
+            if not staged:
+                raise WorkerError('No image was staged for the dry run.')
+            if not composer.verify_caption(caption) or not composer.is_anonymous_enabled():
+                raise WorkerError('Caption or anonymous author changed during media upload.')
         finally:
             stager.cleanup()
 
@@ -727,6 +846,7 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
     )
     browser_mgr = None
     stager = None
+    dispatch_started = False
 
     try:
         # CRITICAL: Check can_publish immediately before any Post click
@@ -755,7 +875,8 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
         page.wait_for_timeout(2000)
         audit.log_event('navigated_to_group_for_publish')
 
-        verification = PublishingVerification(page, settings, expected_caption=caption)
+        verification = PublishingVerification(page, settings, expected_caption=caption,
+                                              monitor_rules=True)
 
         # Step: Check for CAPTCHA/checkpoint before proceeding
         checkpoint = verification.check_captcha_or_checkpoint()
@@ -768,8 +889,8 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
             job_obj = session.publish_job
             job_obj.state = WorkerResultState.FAILED
             job_obj.error_code = 'CHECKPOINT_DETECTED'
-            job_obj.save(update_fields=['state', 'error_code'])
-            safe_transition_to_uncertain(
+            _safe_save(job_obj, update_fields=['state', 'error_code'])
+            _db_call(safe_transition_to_uncertain,
                 pipeline_id=job.pipeline_id,
                 job_id=str(job.job_id),
                 worker_job=job_obj,
@@ -780,9 +901,12 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
             return {'result': 'failed', 'reason': f'Checkpoint: {checkpoint}'}
 
         # Step: Open composer
-        composer = AnonymousComposer(page, settings)
+        composer = AnonymousComposer(page, settings, session.bundle.account.label)
         composer.open_composer()
         audit.log_event('composer_opened_for_publish')
+
+        composer.open_author_menu()
+        audit.log_event('author_menu_opened_for_publish')
 
         # Step: Activate anonymous posting
         anon_available = composer.check_anonymous_posting_available()
@@ -813,17 +937,20 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
             'anonymous_author_verified',
             enabled=anon_enabled,
         )
+        if not anon_enabled:
+            raise WorkerError('Anonymous author could not be verified.')
 
-        # Step: Fill caption
         composer.fill_caption(caption)
         audit.log_event('caption_filled')
 
         # Step: Stage and attach images from R2
+        session.publish_job.state = WorkerResultState.ANONYMOUS_ENABLED
+        _safe_save(session.publish_job, update_fields=['state'])
         stager = MediaStager(settings)
         staged_images = []
         try:
             if session.image_ids:
-                staged_images = stager.stage_all(
+                staged_images = _db_call(stager.stage_all,
                     pipeline_id=job.pipeline_id,
                     image_ids=session.image_ids,
                 )
@@ -833,27 +960,28 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
                 for img in staged_images:
                     composer.attach_image(img.temp_path)
 
-            # Step: Mark media as started (irreversible) and begin dispatch
-            # This must happen BEFORE the actual Post click
-            from modules.publishing.services.media_selection import mark_publishing_started
-            mark_publishing_started(
-                pipeline_id=job.pipeline_id,
-                request_key=job.media_allocation.request_key,
-            )
-            audit.log_event('media_marked_started')
+            if not staged_images:
+                raise WorkerError('No image was staged for publishing.')
+            if not composer.verify_caption(caption) or not composer.is_anonymous_enabled():
+                raise WorkerError('Caption or anonymous author changed during media upload.')
 
-            begin_dispatch(
+            session.publish_job.state = WorkerResultState.CONTENT_READY
+            _safe_save(session.publish_job, update_fields=['state'])
+
+            # begin_dispatch atomically marks media started before the click.
+            _db_call(begin_dispatch,
                 pipeline_id=job.pipeline_id,
                 job_id=str(job.job_id),
                 claim_token=claim_token,
             )
+            dispatch_started = True
             audit.log_event('dispatch_begun')
 
             session.publish_job.state = WorkerResultState.SUBMITTING
             session.publish_job.submitted_at = timezone.now()
             _safe_save(session.publish_job, update_fields=['state', 'submitted_at'])
             audit.log_transition(
-                from_state=WorkerResultState.READY,
+                from_state=WorkerResultState.CONTENT_READY,
                 to_state=WorkerResultState.SUBMITTING,
             )
 
@@ -865,23 +993,40 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
             composer.submit_post()
             audit.log_event('post_submitted')
 
+            prompt = inspect_rules_prompt(page)
+            if prompt:
+                outcome = _wait_for_rules_review(session=session, page=page, prompt=prompt, audit=audit)
+                if outcome:
+                    return outcome
+
             # Step: Verify visibility (never trust HTTP 200 or post_id alone)
             verification_result = verification.verify_post_visibility()
+            if verification_result.rules_prompt:
+                outcome = _wait_for_rules_review(session=session, page=page,
+                    prompt=verification_result.rules_prompt, audit=audit)
+                if outcome:
+                    return outcome
+                verification_result = verification.verify_post_visibility()
+            # A delayed participation prompt can appear while the feed loads.
+            prompt = inspect_rules_prompt(page)
+            if prompt:
+                # An existing confirmation is single-use. Never submit it again.
+                raise WorkerError('Participation prompt remains after confirmation.')
             audit.log_event(
                 'verification_result',
                 state=verification_result.state,
                 external_post_id=verification_result.external_post_id,
             )
 
-            session.publish_job.state = verification_result.state
+            session.publish_job.state = verification_result.state.lower()
             session.publish_job.external_post_id = verification_result.external_post_id or ''
             session.publish_job.verified_at = timezone.now()
-            session.publish_job.save(
+            _safe_save(session.publish_job,
                 update_fields=['state', 'external_post_id', 'verified_at']
             )
 
             # Step: Cross-check with Job Engine
-            recon = reconcile_job_states(
+            recon = _db_call(reconcile_job_states,
                 pipeline_id=job.pipeline_id,
                 job_id=str(job.job_id),
                 worker_job=session.publish_job,
@@ -889,7 +1034,7 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
             )
 
             if verification_result.state == 'PUBLISHED':
-                confirm_published(
+                _db_call(confirm_published,
                     pipeline_id=job.pipeline_id,
                     job_id=str(job.job_id),
                     external_post_id=verification_result.external_post_id,
@@ -905,21 +1050,26 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
                 }
 
             elif verification_result.state == 'PENDING_APPROVAL':
-                safe_transition_to_uncertain(
+                from modules.publishing.services.job_engine import flag_uncertain
+                _db_call(flag_uncertain,
                     pipeline_id=job.pipeline_id,
                     job_id=str(job.job_id),
-                    worker_job=session.publish_job,
-                    claim_token=claim_token,
-                    error_code='PENDING_ADMIN_APPROVAL',
-                    audit=audit,
+                    code='PENDING_ADMIN_APPROVAL',
                 )
                 return {
                     'result': 'pending_approval',
                     'detail': 'Post requires admin approval.',
                 }
 
+            elif verification_result.state == 'SUBMITTED_UNVERIFIED':
+                from modules.publishing.services.job_engine import flag_uncertain
+                _db_call(flag_uncertain, pipeline_id=job.pipeline_id,
+                         job_id=str(job.job_id), code='SUBMITTED_UNVERIFIED')
+                return {'result': 'submitted_unverified',
+                        'detail': 'Submission cannot yet be verified; no retry.'}
+
             else:
-                safe_transition_to_uncertain(
+                _db_call(safe_transition_to_uncertain,
                     pipeline_id=job.pipeline_id,
                     job_id=str(job.job_id),
                     worker_job=session.publish_job,
@@ -936,23 +1086,22 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
             if stager:
                 stager.cleanup()
 
-    except WorkerError:
-        raise
     except Exception as exc:
-        audit.log_error('PUBLISH_ERROR', str(exc))
-        session.publish_job.state = WorkerResultState.FAILED
-        session.publish_job.error_code = 'PUBLISH_ERROR'
-        session.publish_job.error_detail = str(exc)[:2000]
-        _safe_save(session.publish_job, update_fields=['state', 'error_code', 'error_detail'])
-        safe_transition_to_uncertain(
-            pipeline_id=job.pipeline_id,
-            job_id=str(job.job_id),
-            worker_job=session.publish_job,
-            claim_token=claim_token,
-            error_code='PUBLISH_ERROR',
-            audit=audit,
-        )
-        raise WorkerError(f'Publish failed: {exc}') from exc
+        audit.log_error('PUBLISH_ERROR', type(exc).__name__)
+        if dispatch_started:
+            _db_call(safe_transition_to_uncertain,
+                pipeline_id=job.pipeline_id,
+                job_id=str(job.job_id),
+                worker_job=session.publish_job,
+                claim_token=claim_token,
+                error_code='PUBLISH_ERROR',
+                audit=audit,
+            )
+        else:
+            session.publish_job.state = WorkerResultState.FAILED
+            session.publish_job.error_code = 'PUBLISH_ERROR'
+            _safe_save(session.publish_job, update_fields=['state', 'error_code'])
+        raise WorkerError(f'Publish failed: {type(exc).__name__}') from exc
     finally:
         if browser_mgr:
             browser_mgr.close_context(session.context)

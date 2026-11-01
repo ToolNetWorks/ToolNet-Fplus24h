@@ -4,6 +4,7 @@ Each Account gets its own browser context with its own cookies and its pinned Pr
 Cookies are encrypted; never write secret values to logs.
 """
 import logging
+import re
 from typing import List, Optional, Dict, Any
 
 try:
@@ -175,9 +176,20 @@ class BrowserManager:
                     logger.info('Still on Facebook login page')
                     return False
 
-            # If not on login page, consider the session authenticated
-            logger.info('Account identity verified: authenticated session detected')
-            return True
+            # A page without a login form is not proof of which account owns
+            # the session. Compare the expected name in the account menu.
+            name = page.get_by_text(expected_account_label, exact=True)
+            before = sum(name.nth(i).is_visible() for i in range(name.count()))
+            menu = page.get_by_role('button', name=re.compile(
+                r'tài khoản, trang cá nhân của bạn|your profile|account', re.I
+            ))
+            if menu.count() != 1 or not menu.first.is_visible():
+                return False
+            menu.first.click(timeout=10000)
+            page.wait_for_timeout(1000)
+            after = sum(name.nth(i).is_visible() for i in range(name.count()))
+            page.keyboard.press('Escape')
+            return after > before
 
         except Exception:
             logger.info('Exception during account identity verification')

@@ -5,6 +5,8 @@ If visibility cannot be verified through the browser UI, the result is UNCERTAIN
 """
 import logging
 import re
+import time
+from urllib.parse import urljoin, urlsplit
 from dataclasses import dataclass
 from typing import Optional
 
@@ -16,15 +18,18 @@ class VerificationResult:
     state: str
     external_post_id: Optional[str]
     detail: Optional[str]
+    rules_prompt: Optional[object] = None
 
 
 class PublishingVerification:
     """Verify that a post was actually published by inspecting the browser UI."""
 
-    def __init__(self, page, settings, expected_caption: Optional[str] = None):
+    def __init__(self, page, settings, expected_caption: Optional[str] = None,
+                 monitor_rules: bool = False):
         self._page = page
         self._settings = settings
         self._expected_caption = expected_caption
+        self._monitor_rules = monitor_rules
 
     def _log(self, message):
         logger.info('Verification: %s', message)
@@ -47,11 +52,26 @@ class PublishingVerification:
 
             content_loaded = False
             try:
-                self._page.wait_for_selector(
-                    '[role="feed"], .groups_newsfeed, #pagelet-bluebar',
-                    timeout=int(self._settings.browser_timeout_seconds) * 1000,
-                )
-                content_loaded = True
+                selector = '[role="feed"], .groups_newsfeed, #pagelet-bluebar'
+                if self._monitor_rules:
+                    from .rules_confirmation import inspect_rules_prompt
+                    deadline = time.monotonic() + int(self._settings.browser_timeout_seconds)
+                    while time.monotonic() < deadline:
+                        prompt = inspect_rules_prompt(self._page)
+                        if prompt:
+                            return VerificationResult('RULES_CONFIRMATION_REQUIRED', None,
+                                                      'Participation prompt requires review.', prompt)
+                        try:
+                            self._page.wait_for_selector(selector, timeout=1000)
+                            content_loaded = True
+                            break
+                        except Exception:
+                            continue
+                else:
+                    self._page.wait_for_selector(
+                        selector, timeout=int(self._settings.browser_timeout_seconds) * 1000,
+                    )
+                    content_loaded = True
             except Exception:
                 self._page.wait_for_timeout(3000)
 
@@ -67,22 +87,27 @@ class PublishingVerification:
 
             # Check for pending approval indicators
             pending_indicators = [
-                'pending', 'chờ duyệt', 'awaiting approval',
-                'đang chờ duyệt', 'chờ kiểm duyệt',
+                'your post is pending admin approval',
+                'your post is pending approval',
+                'your post is awaiting approval',
+                'bài viết của bạn đang chờ duyệt',
+                'bài viết của bạn đang chờ phê duyệt',
+                'bài viết của bạn đang chờ kiểm duyệt',
             ]
             is_pending = any(ind in text_lower for ind in pending_indicators)
 
             # Check for rejection indicators
             rejected_indicators = [
-                'rejected', 'đã từ chối', 'bài viết bị từ chối',
-                'removed by', 'xóa bởi', 'xóa tự động',
+                'your post was rejected', 'your post has been rejected',
+                'bài viết của bạn đã bị từ chối',
             ]
             is_rejected = any(ind in text_lower for ind in rejected_indicators)
 
             # Attempt to extract a post_id from the URL
             current_url = self._page.url or ''
+            current_group = re.search(r'/groups/([^/]+)', urlsplit(current_url).path)
             post_id = None
-            id_match = re.search(r'/posts/(\d+_\d+)', current_url)
+            id_match = re.search(r'/posts/(\d+(?:_\d+)?)', current_url)
             if id_match:
                 post_id = id_match.group(1)
 
@@ -100,53 +125,39 @@ class PublishingVerification:
                     detail='Post appears to require admin approval.',
                 )
 
-            # Look for the specific post article in the feed
-            # IMPORTANT: We must match the EXPECTED caption, not just any article
-            article = None
-            try:
-                article = self._page.query_selector('[role="article"]')
-            except Exception:
-                pass
-
-            if article is not None:
-                try:
-                    if article.is_visible():
-                        post_text = article.inner_text() or ''
-
-                        if self._expected_caption and post_text.strip():
-                            # Verify the visible post contains the expected caption
-                            # Use a substring match on a normalized fragment
-                            expected_fragment = self._expected_caption.strip()[:200]
-                            post_normalized = post_text.lower().replace('\n', ' ').strip()
-                            if expected_fragment.lower() in post_normalized:
-                                return VerificationResult(
-                                    state='PUBLISHED',
-                                    external_post_id=post_id,
-                                    detail='Post confirmed visible in Group feed '
-                                           'with matching caption content.',
-                                )
-                            else:
-                                # A post article exists but content doesn't match
-                                self._log(
-                                    'Post article found but caption content does not match.'
-                                )
-                                return VerificationResult(
-                                    state='UNCERTAIN',
-                                    external_post_id=post_id,
-                                    detail='Post container visible but content does not '
-                                           'match expected caption.',
-                                )
-                        elif not self._expected_caption:
-                            # Without a caption to match, we cannot be certain
-                            # This branch should not be taken in production
-                            return VerificationResult(
-                                state='SUBMITTED_UNVERIFIED',
-                                external_post_id=post_id,
-                                detail='Post container found but no expected caption '
-                                       'for verification.',
-                            )
-                except Exception:
-                    pass
+            # Match the complete approved caption and a visible media preview in
+            # the same article. A URL or a different feed item is not evidence.
+            expected = re.sub(r'\s+', ' ', self._expected_caption or '').strip().lower()
+            if expected:
+                for article in self._page.query_selector_all('[role="article"]'):
+                    try:
+                        if not article.is_visible():
+                            continue
+                        actual = re.sub(r'\s+', ' ', article.inner_text() or '').strip().lower()
+                        if expected not in actual:
+                            continue
+                        media = article.query_selector_all('img')
+                        has_media = any(img.is_visible() and img.evaluate(
+                            'e => { const r=e.getBoundingClientRect(); return e.complete && e.naturalWidth>0 && r.width>=100 && r.height>=100; }'
+                        ) for img in media)
+                        if not has_media:
+                            return VerificationResult('SUBMITTED_UNVERIFIED', post_id,
+                                'Matching caption found, but attached media was not verified.')
+                        for link in article.query_selector_all('a[href]'):
+                            href = link.get_attribute('href') or ''
+                            candidate = urlsplit(urljoin(current_url, href))
+                            match = re.search(r'/groups/([^/]+)/posts/(\d+(?:_\d+)?)', candidate.path)
+                            if (match and current_group and match.group(1) == current_group.group(1)
+                                    and candidate.hostname in ('facebook.com', 'www.facebook.com', 'm.facebook.com')):
+                                post_id = match.group(2)
+                                break
+                        if not post_id:
+                            return VerificationResult('SUBMITTED_UNVERIFIED', None,
+                                'Matching caption and image visible, but post identity is unavailable.')
+                        return VerificationResult('PUBLISHED', post_id,
+                            'Matching caption and image are visible in the Group feed.')
+                    except Exception:
+                        continue
 
             # No matching post found — even if an article exists
             if post_id:

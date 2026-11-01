@@ -5,6 +5,7 @@ Never stores cookies, tokens, CSRF values, or proxy credentials.
 """
 import re
 import uuid
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -18,7 +19,11 @@ class WorkerResultState(models.TextChoices):
     QUEUED = 'queued', 'Queued'
     PREPARING = 'preparing', 'Preparing'
     READY = 'ready', 'Ready'
+    ANONYMOUS_ENABLED = 'anonymous_enabled', 'Anonymous Enabled'
+    CONTENT_READY = 'content_ready', 'Content Ready'
     SUBMITTING = 'submitting', 'Submitting'
+    RULES_CONFIRMATION_REQUIRED = 'rules_confirmation_required', 'Rules Confirmation Required'
+    RULES_CONFIRMED = 'rules_confirmed', 'Rules Confirmed'
     SUBMITTED_UNVERIFIED = 'submitted_unverified', 'Submitted Unverified'
     PENDING_APPROVAL = 'pending_approval', 'Pending Approval'
     PUBLISHED = 'published', 'Published'
@@ -101,7 +106,7 @@ class WorkerPublishJob(models.Model):
     )
     worker_id = models.CharField(max_length=100)
     state = models.CharField(
-        max_length=24, choices=WorkerResultState.choices,
+        max_length=32, choices=WorkerResultState.choices,
         default=WorkerResultState.QUEUED,
     )
     attempt_number = models.PositiveSmallIntegerField(
@@ -187,3 +192,35 @@ class WorkerRunningOp(models.Model):
     def is_stale(self, now=None, lease_seconds=600):
         now = now or timezone.now()
         return (now - self.heartbeat_at).total_seconds() > lease_seconds
+
+
+class RulesReview(models.Model):
+    """One account/group/job-specific review of a live Facebook prompt."""
+    class State(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        APPROVED = 'approved', 'Approved'
+        REJECTED = 'rejected', 'Rejected'
+        SUBMITTING = 'submitting', 'Submitting'
+        SUBMITTED = 'submitted', 'Submitted'
+        EXPIRED = 'expired', 'Expired'
+        UNCERTAIN = 'uncertain', 'Uncertain'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    worker_job = models.OneToOneField(WorkerPublishJob, on_delete=models.PROTECT, related_name='rules_review')
+    state = models.CharField(max_length=16, choices=State.choices, default=State.PENDING)
+    digest = models.CharField(max_length=64)
+    display_text = models.TextField()
+    checkbox_count = models.PositiveSmallIntegerField(default=0)
+    checked_count = models.PositiveSmallIntegerField(default=0)
+    response_field_count = models.PositiveSmallIntegerField(default=0)
+    question_schema = models.JSONField(default=list, blank=True)
+    answers_ciphertext = models.TextField(blank=True, default='')
+    expires_at = models.DateTimeField()
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    submit_started_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'fb_publishing_rules_review'

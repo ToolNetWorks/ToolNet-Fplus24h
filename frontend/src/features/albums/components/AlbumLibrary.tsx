@@ -7,6 +7,7 @@ import {
 } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import AlbumFilePicker from "./AlbumFilePicker";
 import {
   ArrowLeft,
   ArrowUp,
@@ -84,7 +85,7 @@ export default function AlbumLibrary({
   const [movingId, setMovingId] = useState<string | null>(null);
   const dragSource = useRef<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const activeAlbum = albumResult?.data.find(
     (album) => album.id === selectedId,
   );
@@ -239,12 +240,10 @@ export default function AlbumLibrary({
         pipelineId,
         selectedId,
         files,
+        setUploadProgress,
       );
       setSuccess(`Đã upload thành công ${uploaded.length} ảnh.`);
       setFiles([]);
-      if (inputRef.current) {
-        inputRef.current.value = "";
-      }
       const total = (imageResult?.pagination.total ?? 0)
         + uploaded.length;
       setImagePage(Math.max(1, Math.ceil(total / 20)));
@@ -253,6 +252,7 @@ export default function AlbumLibrary({
     } catch (cause) {
       setMutationError(displayError(cause));
     } finally {
+      setUploadProgress(null);
       setUploading(false);
     }
   }
@@ -556,26 +556,8 @@ export default function AlbumLibrary({
             <label className="block text-sm font-medium">
               Upload ảnh vào Album
             </label>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              disabled={!activeAlbum.is_enabled || uploading || busy}
-              onChange={(event) =>
-                setFiles(Array.from(event.target.files ?? []))
-              }
-              className="block w-full rounded-lg border border-dashed border-slate-300 p-4 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2"
-            />
-            <p className="text-xs text-slate-500">
-              JPEG, PNG, WebP · tối đa 5 ảnh/lần · mỗi ảnh tối đa 10 MB.
-            </p>
-            {files.length > 0 && (
-              <p className="break-words text-xs text-slate-600">
-                Đã chọn {files.length} ảnh —{" "}
-                {files.map((file) => file.name).join(", ")}
-              </p>
-            )}
+            <AlbumFilePicker files={files} onChange={setFiles} disabled={!activeAlbum.is_enabled || uploading || busy} />
+            {uploadProgress !== null && <p role="status" className="text-xs text-slate-600">Đang tải lên: {uploadProgress}%</p>}
             {!activeAlbum.is_enabled && (
               <p className="text-sm text-amber-700">
                 Album đang tắt. Bật Album để upload.
@@ -597,7 +579,7 @@ export default function AlbumLibrary({
               ) : (
                 <Upload size={18} />
               )}
-              {uploading ? "Đang upload..." : "Upload ảnh"}
+              {uploading ? "Đang upload..." : `Upload ảnh (${files.length})`}
             </button>
           </form>
           <div className="border-t border-slate-100 pt-5">

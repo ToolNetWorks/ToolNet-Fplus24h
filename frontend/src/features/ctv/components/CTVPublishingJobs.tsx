@@ -9,6 +9,7 @@ import {
 } from "../api/publishing-jobs";
 import { searchFacebookAccounts, type ProxyAccount } from "../api/proxies";
 import { listGroups, type FacebookGroup } from "@/features/facebook-groups/api/groups";
+import RulesReviewPanel from "./RulesReviewPanel";
 
 const names: Record<JobState, string> = {
   queued: "Đang chờ", claimed: "Worker đang xử lý", ready: "Đã chuẩn bị ảnh",
@@ -114,6 +115,7 @@ export default function CTVPublishingJobs({ pipelineId }: { pipelineId: string }
   const items = result?.data ?? [];
   const pag = result?.pagination;
   return <section className="space-y-4">
+    <RulesReviewPanel pipelineId={pipelineId} />
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 className="text-xl font-bold text-slate-900">Lịch đăng bài & Hàng đợi</h1>

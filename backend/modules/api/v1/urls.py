@@ -36,6 +36,7 @@ from .publishing.operations_health_views import OperationsHealthAPIView
 from .publishing.manual_handoff_views import (
     ManualHandoffAPIView, HandoffQueueAPIView,
 )
+from .publishing.rules_review_views import RulesReviewAPIView
 from .publishing.pilot_views import PublishingPilotReadinessAPIView
 from .publishing.performance_views import PipelinePerformanceAPIView
 from .publishing.release_views import PipelineReleaseReadinessAPIView
@@ -101,6 +102,8 @@ from .pipelines.status_views import PipelineStatusAPIView
 from .pipelines.password_views import CTVPasswordAPIView
 
 urlpatterns = [
+    path('pipelines/<uuid:pipeline_id>/rules-reviews/', RulesReviewAPIView.as_view(), name='rules-review-list'),
+    path('pipelines/<uuid:pipeline_id>/rules-reviews/<uuid:job_id>/', RulesReviewAPIView.as_view(), name='rules-review-decision'),
     path("pipelines/<uuid:pipeline_id>/caption-config/",
          CaptionSettingsAPIView.as_view(), name="caption-config"),
     path("pipelines/<uuid:pipeline_id>/caption-samples/",

@@ -131,7 +131,7 @@ def enqueue_job(*, pipeline_id, account_id, group_id, request_key,
 
 
 @transaction.atomic
-def claim_due_job(*, pipeline_id, worker_id, lease_seconds=600):
+def claim_due_job(*, pipeline_id, worker_id, lease_seconds=600, job_id=None):
     """One worker claims one due Job; no external publishing here."""
     if not isinstance(worker_id, str) or not WORKER_RE.fullmatch(worker_id):
         raise JobEngineError("worker_id không hợp lệ.")
@@ -142,7 +142,7 @@ def claim_due_job(*, pipeline_id, worker_id, lease_seconds=600):
         return None
     now = timezone.now()
     blocked_accounts, blocked_groups = held_subject_ids(pipeline_id=pipeline.pk)
-    job = (PublishingJob.objects.select_for_update(of=('self',))
+    candidates = (PublishingJob.objects.select_for_update(of=('self',))
            .filter(pipeline_id=pipeline.pk, state=PublishingJob.State.QUEUED,
                    facebook_account__connection_status=FacebookAccount.ConnectionStatus.CONNECTED,
                    facebook_group__is_enabled=True,
@@ -156,7 +156,10 @@ def claim_due_job(*, pipeline_id, worker_id, lease_seconds=600):
                      ai_caption__settings_version=F('pipeline__caption_settings__version'),
                      ai_caption__destination_snapshot=F('pipeline__caption_settings__destination'),
                      caption=F('ai_caption__text')))
-           .order_by("next_run_at", "scheduled_at", "id").first())
+           .order_by("next_run_at", "scheduled_at", "id"))
+    if job_id is not None:
+        candidates = candidates.filter(pk=job_id)
+    job = candidates.first()
     if job is None:
         return None
     if not ready_for_dispatch(job):

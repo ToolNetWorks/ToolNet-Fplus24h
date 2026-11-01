@@ -7,6 +7,7 @@ import logging
 import socket
 import time
 import uuid
+from copy import copy
 from dataclasses import replace
 
 from django.core.management.base import BaseCommand, CommandError
@@ -36,6 +37,8 @@ class Command(BaseCommand):
                             help='Poll loop.')
         parser.add_argument('--poll-seconds', type=int, default=20)
         parser.add_argument('--lease-seconds', type=int, default=600)
+        parser.add_argument('--job-id', type=uuid.UUID,
+                            help='Process only this specific Job.')
         parser.add_argument('--worker-id',
                             default='fb-worker-' + socket.gethostname().split('.')[0][:30])
         parser.add_argument('--force-publish', action='store_true',
@@ -51,6 +54,8 @@ class Command(BaseCommand):
             raise CommandError('--force-publish requires --once (exactly one post).')
         if kwargs['force_publish'] and kwargs['watch']:
             raise CommandError('--force-publish cannot be used with --watch.')
+        if kwargs['force_publish'] and not kwargs['job_id']:
+            raise CommandError('--force-publish requires --job-id.')
 
         worker_id = kwargs['worker_id']
         audit = AuditLogger(worker_id=worker_id)
@@ -58,6 +63,7 @@ class Command(BaseCommand):
         if kwargs['once'] or kwargs['force_publish']:
             self._process_one(
                 pipeline_id, worker_id, kwargs['force_publish'], audit,
+                job_id=kwargs['job_id'],
             )
             return
 
@@ -86,10 +92,10 @@ class Command(BaseCommand):
             return
         self.stdout.write(f"Claimed job: {claim['job']['id']}")
 
-    def _process_one(self, pipeline_id, worker_id, force_publish, audit):
+    def _process_one(self, pipeline_id, worker_id, force_publish, audit, job_id=None):
         """Process a single job claim through the full Worker lifecycle."""
         claim_result = claim_job(
-            pipeline_id=pipeline_id, worker_id=worker_id,
+            pipeline_id=pipeline_id, worker_id=worker_id, job_id=job_id,
         )
         if claim_result is None:
             logger.info('No due job for pipeline %s', pipeline_id)
@@ -109,8 +115,11 @@ class Command(BaseCommand):
             from dataclasses import replace
             settings = replace(settings, dry_run=False, enabled=True)
             if config:
+                config = copy(config)
                 config.dry_run = False
                 config.enabled = True
+            claim_result['worker_job'].dry_run = False
+            claim_result['worker_job'].save(update_fields=['dry_run'])
             logger.info('Force publish override applied.')
             audit.log_event('force_publish_override_applied')
 

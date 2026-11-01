@@ -290,6 +290,12 @@ export default function PipelineActions({
               <Sparkles size={16} className="text-blue-500 flex-shrink-0" />
               <span>AI Caption & Trang đích</span>
             </Link>
+            <Link href={`/pipelines/${item.id}/rules-review/`} role="menuitem"
+              onClick={() => setIsOpen(false)}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700">
+              <FolderCheck size={16} className="text-amber-600" />
+              <span>Quy tắc Facebook chờ duyệt</span>
+            </Link>
             {/* Xóa */}
             <button
               type="button"

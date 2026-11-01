@@ -158,6 +158,152 @@ class FacebookPublishingWorkerTestBase(TestCase):
         )
 
 
+class TestTargetedJobClaim(FacebookPublishingWorkerTestBase):
+    def test_rules_prompt_quarantines_job_without_retry(self):
+        from datetime import timedelta
+        from modules.publishing.models import PublishingAttempt
+        from modules.facebook_publishing.services.rules_review import create_review
+        from modules.facebook_publishing.services.rules_confirmation import RulesPrompt
+        job = self._create_job()
+        job.state = PublishingJob.State.DISPATCHING
+        job.attempt_count = 1
+        job.save()
+        PublishingAttempt.objects.create(job=job, number=1, state=PublishingAttempt.State.DISPATCHING)
+        worker_job = WorkerPublishJob.objects.create(job=job, pipeline=self.pipeline,
+            account=self.account, group=self.group, worker_id='test-worker',
+            state=WorkerResultState.SUBMITTING, attempt_number=1, dry_run=False)
+        review_id = create_review(worker_id=worker_job.pk,
+            prompt=RulesPrompt('a' * 64, 1, 0, 1, display_text='Group rules'),
+            expires_at=timezone.now() + timedelta(minutes=10))
+        job.refresh_from_db()
+        worker_job.refresh_from_db()
+        self.assertTrue(review_id)
+        self.assertEqual(job.state, PublishingJob.State.UNCERTAIN)
+        self.assertEqual(worker_job.state, WorkerResultState.RULES_CONFIRMATION_REQUIRED)
+        self.assertEqual(job.attempt_count, 1)
+
+    def test_targeted_claim_does_not_claim_another_queued_job(self):
+        from modules.publishing.services.job_engine import claim_due_job
+        first = self._create_job()
+        target = self._create_job()
+        result = claim_due_job(pipeline_id=self.pipeline.pk, worker_id='targeted-worker', job_id=target.pk)
+        self.assertEqual(result['job']['id'], str(target.pk))
+        first.refresh_from_db()
+        self.assertEqual(first.state, PublishingJob.State.QUEUED)
+
+    def test_expired_eligibility_is_not_accepted(self):
+        from datetime import timedelta
+        self._create_eligibility(verified_at=timezone.now() - timedelta(days=2),
+                                 expires_at=timezone.now() - timedelta(days=1))
+        result = check_group_eligibility(pipeline_id=self.pipeline.pk,
+            account_id=self.account.pk, group_id=self.group.pk)
+        self.assertFalse(result.is_eligible)
+
+
+class TestRulesReviewAPI(FacebookPublishingWorkerTestBase):
+    def setUp(self):
+        super().setUp()
+        from rest_framework.test import APIClient
+        from modules.publishing.models import PublishingAttempt
+        from modules.facebook_publishing.services.rules_confirmation import RulesPrompt
+        from modules.facebook_publishing.services.rules_review import create_review
+        self.client = APIClient()
+        self.job = self._create_job()
+        self.job.state = PublishingJob.State.DISPATCHING
+        self.job.attempt_count = 1
+        self.job.save()
+        PublishingAttempt.objects.create(job=self.job, number=1, state=PublishingAttempt.State.DISPATCHING)
+        self.worker = WorkerPublishJob.objects.create(job=self.job, pipeline=self.pipeline,
+            account=self.account, group=self.group, worker_id='worker',
+            state=WorkerResultState.SUBMITTING, attempt_number=1, dry_run=False)
+        WorkerRunningOp.objects.create(account=self.account, publish_job=self.worker,
+            worker_id='worker', started_at=timezone.now(), heartbeat_at=timezone.now())
+        self.review_id = create_review(worker_id=self.worker.pk,
+            prompt=RulesPrompt('a' * 64, 1, 0, 0, display_text='Rules to review'),
+            expires_at=timezone.now() + timedelta(minutes=5))
+        self.url = f'/api/v1/pipelines/{self.pipeline.pk}/rules-reviews/{self.job.pk}/'
+
+    def test_authorized_confirmation_is_single_use(self):
+        from modules.facebook_publishing.services.rules_review import consume_approval, RulesReviewConflict
+        self.client.force_authenticate(self.ctv)
+        result = self.client.post(self.url, {'digest': 'a' * 64, 'decision': 'approve', 'consent': True}, format='json')
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(self.client.post(self.url, {'digest': 'a' * 64, 'decision': 'approve', 'consent': True}, format='json').status_code, 409)
+        consume_approval(review_id=self.review_id, digest='a' * 64)
+        with self.assertRaises(RulesReviewConflict):
+            consume_approval(review_id=self.review_id, digest='a' * 64)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.state, PublishingJob.State.UNCERTAIN)
+
+    def test_question_answers_are_encrypted_and_consumed_once(self):
+        from modules.facebook_publishing.models import RulesReview
+        from modules.facebook_publishing.services.rules_review import consume_approval
+        self.client.force_authenticate(self.ctv)
+        RulesReview.objects.filter(pk=self.review_id).update(response_field_count=1,
+            question_schema=[{'label': 'Why join?', 'supported': True}])
+        result = self.client.post(self.url, {'digest': 'a' * 64, 'decision': 'approve',
+            'consent': True, 'answers': ['My private answer']}, format='json')
+        self.assertEqual(result.status_code, 200)
+        row = RulesReview.objects.get(pk=self.review_id)
+        self.assertNotIn('My private answer', row.answers_ciphertext)
+        self.assertEqual(consume_approval(review_id=row.pk, digest=row.digest), ['My private answer'])
+        row.refresh_from_db()
+        self.assertEqual(row.answers_ciphertext, '')
+
+    def test_other_pipeline_cannot_read_or_approve(self):
+        self.client.force_authenticate(self.other_ctv)
+        self.assertEqual(self.client.get(f'/api/v1/pipelines/{self.pipeline.pk}/rules-reviews/').status_code, 404)
+        self.assertEqual(self.client.post(self.url, {'digest': 'a' * 64, 'decision': 'approve', 'consent': True}, format='json').status_code, 404)
+
+    def test_refusal_never_approves(self):
+        from modules.facebook_publishing.models import RulesReview
+        self.client.force_authenticate(self.ctv)
+        result = self.client.post(self.url, {'digest': 'a' * 64, 'decision': 'reject'}, format='json')
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(RulesReview.objects.get(pk=self.review_id).state, RulesReview.State.REJECTED)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.state, PublishingJob.State.UNCERTAIN)
+
+    def test_expired_browser_and_unanswered_questions_block_approval(self):
+        from modules.facebook_publishing.models import RulesReview
+        self.client.force_authenticate(self.ctv)
+        payload = {'digest': 'a' * 64, 'decision': 'approve', 'consent': True}
+        RulesReview.objects.filter(pk=self.review_id).update(response_field_count=1)
+        self.assertEqual(self.client.post(self.url, payload, format='json').status_code, 409)
+        RulesReview.objects.filter(pk=self.review_id).update(response_field_count=0)
+        WorkerRunningOp.objects.filter(publish_job=self.worker).update(heartbeat_at=timezone.now() - timedelta(minutes=1))
+        self.assertEqual(self.client.post(self.url, payload, format='json').status_code, 409)
+
+    @patch('modules.facebook_publishing.management.commands.facebook_rules_reconcile.BrowserManager')
+    def test_recovery_with_expired_login_never_reposts(self, manager_class):
+        from django.core.management import call_command, CommandError
+        self.config.connection_mode = 'direct'
+        self.config.save()
+        WorkerRunningOp.objects.filter(publish_job=self.worker).update(
+            heartbeat_at=timezone.now() - timedelta(minutes=1))
+        manager = manager_class.return_value
+        manager.load_account_cookies.return_value = (True, 4)
+        manager.verify_account_identity.return_value = False
+        with self.assertRaises(CommandError):
+            call_command('facebook_rules_reconcile', pipeline_id=self.pipeline.pk, job_id=self.job.pk)
+        manager.shutdown.assert_called_once()
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.state, PublishingJob.State.UNCERTAIN)
+
+    def test_session_loss_after_rules_submit_stays_uncertain(self):
+        from modules.facebook_publishing.models import RulesReview
+        from modules.facebook_publishing.services.rules_review import expire_lost_session
+        RulesReview.objects.filter(pk=self.review_id).update(state=RulesReview.State.SUBMITTING)
+        WorkerRunningOp.objects.filter(publish_job=self.worker).update(
+            heartbeat_at=timezone.now() - timedelta(minutes=1))
+        self.assertEqual(expire_lost_session(pipeline_id=self.pipeline.pk, job_id=self.job.pk),
+                         RulesReview.State.UNCERTAIN)
+        self.worker.refresh_from_db()
+        self.job.refresh_from_db()
+        self.assertEqual(self.worker.state, WorkerResultState.UNCERTAIN)
+        self.assertEqual(self.job.state, PublishingJob.State.UNCERTAIN)
+
+
 class TestAccountWithoutAnonymousPermission(FacebookPublishingWorkerTestBase):
     """Test 1: An Account without anonymous-posting permission."""
 

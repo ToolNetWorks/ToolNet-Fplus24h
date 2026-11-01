@@ -11,6 +11,12 @@ Interacts with the Facebook Groups composer through the browser UI:
 Never replays private GraphQL requests from the HAR.
 """
 import logging
+import json
+import os
+import re
+import tempfile
+import time
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
@@ -31,13 +37,28 @@ class AnonymousComposerError(Exception):
 class AnonymousComposer:
     """Adapter that drives the Facebook Groups composer through the browser UI."""
 
-    def __init__(self, page, settings):
+    def __init__(self, page, settings, account_label=None):
         self._page = page
         self._settings = settings
+        self._account_label = account_label
 
     def _log(self, message):
         """Log without exposing any sensitive values."""
         logger.info('Composer: %s', message)
+
+    def _save_safe_diagnostics(self, reason):
+        """Save structural counts only and mask all page content in screenshots."""
+        try:
+            directory = Path(tempfile.mkdtemp(prefix='fb-composer-diagnostic-'))
+            counts = {'reason': reason}
+            for role in ('dialog', 'switch', 'textbox'):
+                counts[f'{role}_count'] = self._page.get_by_role(role).count()
+            (directory / 'dom-summary.json').write_text(json.dumps(counts), encoding='utf-8')
+            self._page.screenshot(path=str(directory / 'masked.png'),
+                                  mask=[self._page.locator('body')])
+            self._log(f'Safe diagnostics saved to {directory}')
+        except Exception:
+            self._log('Safe diagnostics unavailable')
 
     def navigate_to_group(self, group_url: str):
         """Navigate to the Facebook Group page."""
@@ -55,6 +76,15 @@ class AnonymousComposer:
         dialog to actually appear. Does NOT click Post.
         """
         self._log('Opening composer')
+
+        # Match the Group's visible prompt before considering older selectors.
+        prompt = self._page.get_by_text(re.compile(r'Bạn viết gì đi|Write something', re.I)).first
+        if prompt.count() and prompt.is_visible():
+            prompt.click(timeout=10000)
+            self._page.get_by_role('dialog').filter(
+                has=self._page.get_by_role('textbox')
+            ).first.wait_for(state='visible', timeout=15000)
+            return ComposerActionResult('open_composer', True)
 
         # Selectors for the create-post button on Facebook Group page
         create_post_selectors = [
@@ -138,156 +168,102 @@ class AnonymousComposer:
         self._log('Composer opened')
         return ComposerActionResult('open_composer', True)
 
-    def check_anonymous_posting_available(self) -> bool:
-        """Check if the anonymous posting option is available inside the composer.
+    _ANONYMOUS_ROW = re.compile(
+        r"đăng dưới vai trò thành viên ẩn danh|post as an anonymous member", re.I,
+    )
+    _ANONYMOUS_IDENTITY = re.compile(
+        r"thành viên ẩn danh|anonymous member|anonymous participant", re.I,
+    )
 
-        Only looks inside the open composer dialog, not the whole page.
-        """
+    def _composer_dialog(self):
+        return self._page.get_by_role('dialog').filter(
+            has=self._page.get_by_role('textbox')
+        ).first
+
+    def open_author_menu(self):
+        """Open the author identity chooser inside the actual composer."""
+        if not self._account_label:
+            raise AnonymousComposerError('Expected account label is required.')
+        # Wait until the composer transition has settled before opening a popover.
+        self._page.wait_for_timeout(2000)
+        author = self._page.get_by_role('button', name=self._account_label, exact=True)
+        if author.count() != 1 or not author.is_visible():
+            self._save_safe_diagnostics('author_identity_unavailable')
+            raise AnonymousComposerError('Author identity menu not found.')
+        author.click(timeout=10000)
         try:
-            self._log('Checking anonymous posting toggle inside composer')
-
-            # Scope to the composer dialog if present
-            composer_scope = self._page.query_selector('div[role="dialog"]')
-            search_root = composer_scope if composer_scope else self._page
-
-            selectors = [
-                # Anonymous toggle switch inside composer
-                'div[role="switch"][aria-label*="ẩn danh"]',
-                'div[role="switch"][aria-label*="anonymous"]',
-                'input[name*="anonymous"]',
-                # Anonymous toggle button variants
-                'button[aria-label*="ẩn danh"]',
-                'button[aria-label*="anonymous"]',
-                # Text-based labels
-                'div[aria-label*="ẩn danh"]',
-                'div[aria-label*="anonymous"]',
-            ]
-
-            for sel in selectors:
-                try:
-                    els = search_root.query_selector_all(sel)
-                    for el in els:
-                        if el.is_visible():
-                            self._log(
-                                'Anonymous posting toggle found inside composer'
-                            )
-                            return True
-                except Exception:
-                    continue
-
-            self._log('No anonymous posting toggle found inside composer')
-            return False
+            self._page.get_by_role('switch').first.wait_for(state='visible', timeout=10000)
+            if self._anonymous_switch() is None:
+                raise AnonymousComposerError('Anonymous identity switch not found.')
         except Exception:
-            self._log('Error checking anonymous toggle inside composer')
+            self._save_safe_diagnostics('anonymous_switch_unavailable')
+            raise
+        return ComposerActionResult('open_author_menu', True)
+
+    def _anonymous_switch(self):
+        switch = self._page.get_by_role('switch')
+        if switch.count() != 1 or not switch.first.is_visible():
+            return None
+        # Facebook splits the row label into nested spans; accessible name may
+        # be empty, so inspect the rendered text of the switch's containing row.
+        row_text = switch.first.evaluate(
+            "e => { let p=e; for(let i=0;i<3 && p;i++) p=p.parentElement; return p?.innerText || ''; }"
+        )
+        if not self._ANONYMOUS_ROW.search(row_text):
+            return None
+        return switch.first
+
+    def check_anonymous_posting_available(self) -> bool:
+        try:
+            return self._anonymous_switch() is not None
+        except Exception:
             return False
 
     def is_anonymous_enabled(self) -> bool:
-        """Check whether anonymous mode is currently ON in the composer.
-
-        Inspects the toggle switch state (aria-pressed or checked attribute).
-        """
+        """Require the composer's author to identify as anonymous."""
         try:
-            composer_scope = self._page.query_selector('div[role="dialog"]')
-            search_root = composer_scope if composer_scope else self._page
-
-            selectors = [
-                'div[role="switch"][aria-label*="ẩn danh"]',
-                'div[role="switch"][aria-label*="anonymous"]',
-                'input[name*="anonymous"]',
-            ]
-
-            for sel in selectors:
-                els = search_root.query_selector_all(sel)
-                for el in els:
-                    if not el.is_visible():
-                        continue
-                    # Check aria-pressed for switch role
-                    pressed = el.get_attribute('aria-pressed')
-                    if pressed == 'true':
-                        return True
-                    # Check checked for input
-                    checked = el.get_attribute('checked')
-                    if checked == 'true' or checked is True:
-                        return True
-                    # Check data-checked or similar
-                    data_checked = el.get_attribute('data-checked')
-                    if data_checked == 'true':
-                        return True
-            return False
+            dialog = self._composer_dialog()
+            author = dialog.get_by_role('button', name=self._ANONYMOUS_IDENTITY)
+            return author.count() == 1 and author.first.is_visible()
         except Exception:
-            self._log('Error checking anonymous mode state')
             return False
 
     def activate_anonymous(self) -> ComposerActionResult:
-        """Activate the anonymous posting toggle in the composer.
-
-        Checks current state first, only clicks if not already enabled.
-        Verifies the state changed after clicking.
-        """
+        """Turn on the identified switch and verify the composer author."""
         try:
-            # Check if already enabled
-            if self.is_anonymous_enabled():
-                self._log('Anonymous mode already enabled')
-                return ComposerActionResult('activate_anonymous', True, 'already_enabled')
-
-            self._log('Activating anonymous posting toggle')
-
-            composer_scope = self._page.query_selector('div[role="dialog"]')
-            search_root = composer_scope if composer_scope else self._page
-
-            selectors = [
-                'div[role="switch"][aria-label*="ẩn danh"]',
-                'div[role="switch"][aria-label*="anonymous"]',
-                'input[name*="anonymous"]',
-                'button[aria-label*="ẩn danh"]',
-                'button[aria-label*="anonymous"]',
-                'div[aria-label*="ẩn danh"]',
-                'div[aria-label*="anonymous"]',
-            ]
-
-            clicked = False
-            for sel in selectors:
-                els = search_root.query_selector_all(sel)
-                for el in els:
-                    try:
-                        if el.is_visible():
-                            el.click()
-                            self._page.wait_for_timeout(1000)
-                            clicked = True
-                            break
-                    except Exception:
-                        continue
-                if clicked:
-                    break
-
-            if not clicked:
-                return ComposerActionResult(
-                    'activate_anonymous',
-                    False,
-                    'ANONYMOUS_UI_UNCONFIRMED',
-                )
-
-            # Verify the state changed
-            self._page.wait_for_timeout(500)
-            if self.is_anonymous_enabled():
-                self._log('Anonymous toggle activated successfully')
-                return ComposerActionResult('activate_anonymous', True)
-            else:
-                # Clicked but state didn't change
-                return ComposerActionResult(
-                    'activate_anonymous',
-                    False,
-                    'ANONYMOUS_UI_UNCONFIRMED',
-                )
-
-        except AnonymousComposerError:
-            raise
-        except Exception as exc:
-            return ComposerActionResult(
-                'activate_anonymous',
-                False,
-                f'ANONYMOUS_UI_UNCONFIRMED: {type(exc).__name__}',
+            switch = self._anonymous_switch()
+            if switch is None:
+                return ComposerActionResult('activate_anonymous', False, 'ANONYMOUS_TOGGLE_NOT_FOUND')
+            state = switch.get_attribute('aria-checked')
+            if state not in ('true', 'false'):
+                return ComposerActionResult('activate_anonymous', False, 'ANONYMOUS_STATE_UNKNOWN')
+            if state == 'false':
+                switch.click(timeout=10000)
+            # Facebook may close the menu immediately when the switch changes.
+            # A switch that remains visible must explicitly report checked.
+            self._page.wait_for_timeout(1000)
+            remaining = self._anonymous_switch()
+            if remaining is not None:
+                if remaining.get_attribute('aria-checked') != 'true':
+                    return ComposerActionResult('activate_anonymous', False, 'ANONYMOUS_STATE_UNCONFIRMED')
+                self._page.keyboard.press('Escape')
+            # Handle Facebook's explicit anonymous-post confirmation, if shown.
+            confirmation = self._page.get_by_role('dialog').filter(
+                has_text=re.compile(r'đăng bài ẩn danh|post anonymously', re.I)
             )
+            if confirmation.count() == 1 and confirmation.first.is_visible():
+                confirm = confirmation.first.get_by_role(
+                    'button', name=re.compile(r'^(tiếp tục|xong|continue|done)$', re.I)
+                )
+                if confirm.count() == 1:
+                    confirm.first.click(timeout=10000)
+            self._page.wait_for_timeout(500)
+            if not self.is_anonymous_enabled():
+                return ComposerActionResult('activate_anonymous', False, 'ANONYMOUS_AUTHOR_UNCONFIRMED')
+            return ComposerActionResult('activate_anonymous', True)
+        except Exception as exc:
+            self._save_safe_diagnostics('anonymous_activation_failed')
+            return ComposerActionResult('activate_anonymous', False, type(exc).__name__)
 
     def fill_caption(self, caption: str):
         """Fill the caption text into the composer."""
@@ -298,66 +274,37 @@ class AnonymousComposer:
         self._log('Filling caption')
         try:
             # Scope to composer dialog
-            composer_scope = self._page.query_selector('div[role="dialog"]')
-            search_root = composer_scope if composer_scope else self._page
-
-            textboxes = search_root.query_selector_all('div[role="textbox"]')
-            if not textboxes:
-                raise AnonymousComposerError('Caption textbox not found in composer.')
-
-            # Use the first visible textbox
-            textbox = None
-            for tb in textboxes:
-                try:
-                    if tb.is_visible():
-                        textbox = tb
-                        break
-                except Exception:
-                    continue
-
-            if textbox is None:
-                raise AnonymousComposerError('Caption textbox not visible.')
-
+            textbox = self._composer_dialog().get_by_role('textbox').first
             textbox.fill(caption, timeout=30000)
             self._page.wait_for_timeout(500)
+            if not self.verify_caption(caption):
+                raise AnonymousComposerError('Caption could not be verified in composer.')
             return ComposerActionResult('fill_caption', True)
         except Exception as exc:
             raise AnonymousComposerError(f'Failed to fill caption: {exc}') from exc
+
+    def verify_caption(self, caption: str) -> bool:
+        try:
+            return self._composer_dialog().get_by_role('textbox').first.inner_text().strip() == caption.strip()
+        except Exception:
+            return False
 
     def attach_image(self, image_path: str):
         """Attach a staged image file to the composer via native file input."""
         self._log('Attaching image')
         try:
-            # Scope to composer dialog
-            composer_scope = self._page.query_selector('div[role="dialog"]')
-            search_root = composer_scope if composer_scope else self._page
-
-            file_input = None
-            selectors = [
-                'input[type="file"][accept*="image"]',
-                'input[type="file"].composer_image_input',
-                'input[type="file"][name*="file"]',
-                'input[type="file"]',
-            ]
-            for sel in selectors:
-                try:
-                    els = search_root.query_selector_all(sel)
-                    for el in els:
-                        if el.is_visible():
-                            file_input = el
-                            break
-                except Exception:
-                    continue
-                if file_input:
-                    break
-
-            if file_input is None:
-                file_input = self._page.wait_for_selector(
-                    'input[type="file"]', timeout=10000,
-                )
-
+            dialog = self._composer_dialog()
+            file_input = dialog.locator('input[type="file"]').first
             file_input.set_input_files(image_path, timeout=30000)
-            self._page.wait_for_timeout(2000)
+            preview = dialog.get_by_role('img', name=os.path.basename(image_path), exact=True)
+            preview.first.wait_for(state='visible', timeout=30000)
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                if preview.first.evaluate('e => e.complete && e.naturalWidth > 0'):
+                    break
+                self._page.wait_for_timeout(250)
+            else:
+                raise AnonymousComposerError('Image preview did not load.')
             return ComposerActionResult('attach_image', True)
         except Exception as exc:
             raise AnonymousComposerError(f'Failed to attach image: {exc}') from exc
@@ -373,28 +320,16 @@ class AnonymousComposer:
             )
         self._log('Submitting post')
         try:
-            # Scope to composer dialog
-            composer_scope = self._page.query_selector('div[role="dialog"]')
-            search_root = composer_scope if composer_scope else self._page
-
-            post_buttons = [
-                'button[type="submit"][value*="Đăng"]',
-                'button[type="submit"][value*="Post"]',
-                'div[role="button"][aria-label*="Đăng"]',
-                'div[role="button"][aria-label*="Post"]',
-                'button[data-testid="composer_post_button"]',
-            ]
-            for sel in post_buttons:
-                try:
-                    els = search_root.query_selector_all(sel)
-                    for btn in els:
-                        if btn.is_visible():
-                            btn.click()
-                            self._page.wait_for_timeout(1000)
-                            return ComposerActionResult('submit_post', True)
-                except Exception:
-                    continue
-            raise AnonymousComposerError('Post button not found in composer.')
+            button = self._composer_dialog().get_by_role(
+                'button', name=re.compile(r'^(đăng|post)$', re.I)
+            )
+            if button.count() != 1 or not button.first.is_visible() or not button.first.is_enabled():
+                raise AnonymousComposerError('An enabled Post button was not found in composer.')
+            # A click can reach Facebook even if Playwright reports a timeout.
+            # Never try another selector after attempting the click.
+            button.first.click(timeout=10000)
+            self._page.wait_for_timeout(1000)
+            return ComposerActionResult('submit_post', True)
         except Exception as exc:
             raise AnonymousComposerError(f'Failed to submit post: {exc}') from exc
 
