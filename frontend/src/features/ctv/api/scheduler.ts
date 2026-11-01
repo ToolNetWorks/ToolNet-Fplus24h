@@ -129,8 +129,8 @@ export const previewSchedule = (id: string, scheduleId: string) =>
   request<SchedulePreview>(`${schedulePath(id, scheduleId)}preview/`);
 export const runSchedule = (id: string, scheduleId: string) =>
   request<SchedulePreview>(`${schedulePath(id, scheduleId)}run/`, "POST", {});
-export const listScheduleBatches = (id: string, scheduleId: string) =>
-  request<ScheduledBatch[]>(`${schedulePath(id, scheduleId)}batches/`);
+export const listScheduleBatches = (id: string, scheduleId: string, signal?: AbortSignal) =>
+  request<ScheduledBatch[]>(`${schedulePath(id, scheduleId)}batches/`, "GET", undefined, signal);
 export const listEligibilities = (id: string, signal?: AbortSignal) =>
   request<EligibilityRecord[]>(`${root(id)}group-eligibility/`, "GET", undefined, signal);
 export const saveEligibility = (id: string, data: EligibilityWrite) =>

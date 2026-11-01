@@ -87,19 +87,20 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
   const [schedules, setSchedules] = useState<PipelineSchedule[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState<FormSchedule | null>(null);
-  const [baseline, setBaseline] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [draftState, setDraftState] = useState<FormSchedule | null>(null);
+  const [baselineState, setBaselineState] = useState("");
+  const [draftFor, setDraftFor] = useState("");
+  const [settledSchedules, setSettledSchedules] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [revision, setRevision] = useState(0);
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
   const [batches, setBatches] = useState<ScheduledBatch[]>([]);
-  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [settledBatches, setSettledBatches] = useState<string | null>(null);
   const [eligibilities, setEligibilities] = useState<EligibilityRecord[]>([]);
   const [health, setHealth] = useState<GroupHealth[]>([]);
-  const [referenceLoading, setReferenceLoading] = useState(false);
+  const [settledReferences, setSettledReferences] = useState<string | null>(null);
   const [accountSearch, setAccountSearch] = useState("");
   const [groupSearch, setGroupSearch] = useState("");
   const [groupPage, setGroupPage] = useState(1);
@@ -119,11 +120,18 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
   const [healthEvidence, setHealthEvidence] = useState("");
   const [reviewAt, setReviewAt] = useState("");
   const [captionConfig, setCaptionConfig] = useState<CaptionConfig | null>(null);
-  const [captionConfigLoading, setCaptionConfigLoading] = useState(false);
-
   const aiCaptionEnabled = captionConfig?.enabled && captionConfig?.auto_generate && captionConfig?.auto_approve;
 
   const selected = schedules.find((row) => row.id === selectedId) ?? null;
+  const editorKey = creating ? '__new__' : selectedId;
+  const draft = draftFor === editorKey ? draftState : selected ? fromSchedule(selected) : null;
+  const baseline = draftFor === editorKey ? baselineState : draft ? JSON.stringify(draft) : '';
+  const scheduleRequest = JSON.stringify([pipelineId, revision]);
+  const referenceRequest = JSON.stringify([pipelineId, view, revision]);
+  const batchRequest = JSON.stringify([pipelineId, selectedId, revision]);
+  const loading = settledSchedules !== scheduleRequest;
+  const referenceLoading = (view === 'eligibility' || view === 'health') && settledReferences !== referenceRequest;
+  const loadingBatches = view === 'batches' && !!selectedId && settledBatches !== batchRequest;
   const original = selected ? fromSchedule(selected) : newForm();
   const dirty = draft !== null && JSON.stringify(draft) !== baseline;
   const scheduleIsSaved = !creating && !!selected;
@@ -141,32 +149,20 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setError("");
     listSchedules(pipelineId, controller.signal)
       .then((rows) => {
         if (controller.signal.aborted) return;
+        setError("");
         setSchedules(rows);
         setSelectedId((previous) => rows.some((r) => r.id === previous) ? previous : (rows[0]?.id ?? ""));
       })
       .catch((cause: unknown) => { if (!controller.signal.aborted) setError(errorText(cause)); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      .finally(() => { if (!controller.signal.aborted) setSettledSchedules(scheduleRequest); });
     return () => controller.abort();
-  }, [pipelineId, revision]);
-
-  // Switch form only when the selected schedule changes. On save, explicitly
-  // sync the baseline; do not discard edits due to background fetches.
-  useEffect(() => {
-    if (creating) return;
-    const row = schedules.find((item) => item.id === selectedId);
-    if (!row) { setDraft(null); setBaseline(""); return; }
-    const next = fromSchedule(row);
-    setDraft(next); setBaseline(JSON.stringify(next));
-    setPreview(null);
-  }, [selectedId, creating]);
+  }, [pipelineId, revision, scheduleRequest]);
 
   useEffect(() => {
     const controller = new AbortController();
-    setCaptionConfigLoading(true);
     captionAPI.settings(pipelineId)
       .then((cfg) => {
         if (controller.signal.aborted) return;
@@ -175,9 +171,6 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
       .catch(() => {
         if (controller.signal.aborted) return;
         setCaptionConfig(null);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setCaptionConfigLoading(false);
       });
     return () => controller.abort();
   }, [pipelineId]);
@@ -185,7 +178,6 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
   useEffect(() => {
     if (view !== "eligibility" && view !== "health") return;
     const controller = new AbortController();
-    setReferenceLoading(true);
     Promise.all([
       listEligibilities(pipelineId, controller.signal),
       listGroupHealth(pipelineId, controller.signal),
@@ -193,9 +185,19 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
       if (!controller.signal.aborted) { setEligibilities(elig); setHealth(h); }
     }).catch((cause: unknown) => {
       if (!controller.signal.aborted) setError(errorText(cause));
-    }).finally(() => { if (!controller.signal.aborted) setReferenceLoading(false); });
+    }).finally(() => { if (!controller.signal.aborted) setSettledReferences(referenceRequest); });
     return () => controller.abort();
-  }, [pipelineId, view, revision]);
+  }, [pipelineId, view, revision, referenceRequest]);
+
+  useEffect(() => {
+    if (view !== 'batches' || !selectedId) return;
+    const controller = new AbortController();
+    listScheduleBatches(pipelineId, selectedId, controller.signal)
+      .then((rows) => { if (!controller.signal.aborted) { setBatches(rows); setError(''); } })
+      .catch((cause: unknown) => { if (!controller.signal.aborted) { setBatches([]); setError(errorText(cause)); } })
+      .finally(() => { if (!controller.signal.aborted) setSettledBatches(batchRequest); });
+    return () => controller.abort();
+  }, [pipelineId, selectedId, view, revision, batchRequest]);
 
   useEffect(() => {
     if (view !== "eligibility" && view !== "health") return;
@@ -220,7 +222,7 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
 
   function selectSchedule(id: string) {
     if (working || (dirty && !window.confirm("Có cấu hình lịch chưa lưu. Bỏ thay đổi?"))) return;
-    setCreating(false); setSelectedId(id); setPreview(null); setNotice(""); setError("");
+    setCreating(false); setSelectedId(id); setDraftFor(""); setPreview(null); setNotice(""); setError("");
   }
   function switchView(next: View) {
     if (view === next || working) return;
@@ -229,17 +231,17 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
   }
   function refresh() {
     if (working || (dirty && !window.confirm("Có thay đổi chưa lưu. Tải lại sẽ bỏ các thay đổi đó. Tiếp tục?"))) return;
-    setCreating(false); setPreview(null); setRevision((n) => n + 1);
+    setCreating(false); setDraftFor(""); setPreview(null); setRevision((n) => n + 1);
     setError(""); setNotice("");
   }
   function createNew() {
     if (working || (dirty && !window.confirm("Bỏ thay đổi lịch hiện tại?"))) return;
     const next = newForm();
-    setDraft(next); setBaseline(JSON.stringify(next)); setCreating(true);
+    setDraftState(next); setBaselineState(JSON.stringify(next)); setDraftFor('__new__'); setCreating(true);
     setPreview(null); setView("schedules"); setNotice(""); setError("");
   }
   function setField<K extends keyof FormSchedule>(key: K, value: FormSchedule[K]) {
-    setDraft((old) => old ? { ...old, [key]: value } : old);
+    if (draft) { setDraftState({ ...draft, [key]: value }); setBaselineState(baseline); setDraftFor(editorKey); }
     setPreview(null); setError("");
   }
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -283,8 +285,8 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
       }
       const next = fromSchedule(saved);
       setSchedules((current) => [saved, ...current.filter((row) => row.id !== saved.id)]);
-      setCreating(false); setSelectedId(saved.id); setDraft(next);
-      setBaseline(JSON.stringify(next)); setPreview(null);
+      setCreating(false); setSelectedId(saved.id); setDraftState(next); setDraftFor(saved.id);
+      setBaselineState(JSON.stringify(next)); setPreview(null);
     } catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
   }
@@ -300,7 +302,7 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
       const saved = await updateSchedule(pipelineId, selected.id, { enabled: !selected.enabled });
       const next = fromSchedule(saved);
       setSchedules((rows) => rows.map((r) => r.id === saved.id ? saved : r));
-      setDraft(next); setBaseline(JSON.stringify(next)); setPreview(null);
+      setDraftState(next); setDraftFor(saved.id); setBaselineState(JSON.stringify(next)); setPreview(null);
       setNotice(saved.enabled ? "Đã bật lịch. Chưa tự tạo Job." : "Đã tắt lịch. Job đã tạo không tự hủy.");
     } catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
@@ -329,7 +331,7 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
       const changed = rows.find((row) => row.id === selected.id);
       if (changed) {
         const form = fromSchedule(changed);
-        setDraft(form); setBaseline(JSON.stringify(form));
+        setDraftState(form); setDraftFor(changed.id); setBaselineState(JSON.stringify(form));
       }
       setRevision((n) => n + 1);
     } catch (cause) { setError(errorText(cause)); }
@@ -414,7 +416,7 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
         </div>
       </div>
       <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-        Chế độ bắt buộc: <b>đăng ẩn danh</b> và <b>không tham gia Group</b>. Chưa xác minh quyền của Account đối với Group sẽ không được phân phối. Tạo batch chỉ tạo Job hàng đợi, không gửi yêu cầu đến Facebook.
+        Yêu cầu: <b>đăng ẩn danh</b>; tool không tự tham gia Group. Account chưa được xác minh quyền đăng sẽ không được phân phối. Tạo batch chỉ tạo Job hàng đợi, không gửi yêu cầu đến Facebook.
       </p>
       {error && <p role="alert" className="rounded-md bg-red-50 p-3 text-xs text-red-700">{error}</p>}
       {notice && <p role="status" className="rounded-md bg-blue-50 p-3 text-xs text-blue-700">{notice}</p>}
@@ -564,7 +566,7 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
         <label className={labelClass}>Chọn lịch<select className={inputClass} value={selectedId} onChange={(e) => selectSchedule(e.target.value)}><option value="">Chọn lịch</option>{schedules.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
         {loadingBatches && <p className="text-xs text-slate-500">Đang tải batch...</p>}
         <div className="overflow-auto"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50"><tr><th className="px-3 py-2">Slot</th><th className="px-3 py-2">Job đã tạo</th><th className="px-3 py-2">Group bỏ qua</th><th className="px-3 py-2">Ngày ghi nhận</th></tr></thead><tbody>
-          {batches.length === 0 ? <tr><td colSpan={4} className="px-3 py-3 text-slate-500">Chưa có batch.</td></tr> : batches.map((row) => <tr key={row.id} className="border-t"><td className="px-3 py-2 whitespace-nowrap">{timeLabel(row.slot_at)}</td><td className="px-3 py-2 font-semibold">{row.assigned_count}</td><td className="px-3 py-2">{row.skipped.length}<details className="mt-1 text-slate-500"><summary className="cursor-pointer">Chi tiết</summary>{row.skipped.map((s, i) => <p key={`${s.group_id}-${i}`} className="py-0.5">{s.group_id.slice(0, 8)}: {reasonLabel[s.code] ?? s.code}</p>)}</details></td><td className="px-3 py-2 whitespace-nowrap">{timeLabel(row.created_at)}</td></tr>)}
+          {loadingBatches ? <tr><td colSpan={4} className="px-3 py-3 text-slate-500">Đang tải...</td></tr> : !selectedId || batches.length === 0 ? <tr><td colSpan={4} className="px-3 py-3 text-slate-500">Chưa có batch.</td></tr> : batches.map((row) => <tr key={row.id} className="border-t"><td className="px-3 py-2 whitespace-nowrap">{timeLabel(row.slot_at)}</td><td className="px-3 py-2 font-semibold">{row.assigned_count}</td><td className="px-3 py-2">{row.skipped.length}<details className="mt-1 text-slate-500"><summary className="cursor-pointer">Chi tiết</summary>{row.skipped.map((s, i) => <p key={`${s.group_id}-${i}`} className="py-0.5">{s.group_id.slice(0, 8)}: {reasonLabel[s.code] ?? s.code}</p>)}</details></td><td className="px-3 py-2 whitespace-nowrap">{timeLabel(row.created_at)}</td></tr>)}
         </tbody></table></div>
       </div>}
     </section>

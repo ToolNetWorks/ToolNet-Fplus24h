@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -68,69 +68,32 @@ interface NavItem {
   tab?: Tab;
 }
 
-const navigation: {
-  heading: string;
-  items: NavItem[];
-}[] = [
-  {
-    heading: "TỔNG QUAN",
-    items: [
-      {
-        label: "Dashboard",
-        icon: LayoutDashboard,
-        tab: "overview",
-      },
-      { label: "Giám sát vận hành", icon: ShieldCheck, tab: "operations" },
-      { label: "Thông báo & Cảnh báo", icon: Bell, tab: "alerts" },
-    ],
-  },
-  {
-    heading: "QUẢN LÝ TÀI NGUYÊN",
-    items: [
-      {
-        label: "Quản lý tài khoản",
-        icon: Users,
-        tab: "accounts",
-      },
-      {
-        label: "Quản lý Proxy",
-        icon: Network,
-        tab: "proxies",
-      },
-      {
-        label: "Quản lý Groups",
-        icon: UsersRound,
-        tab: "groups",
-      },
-      {
-        label: "Quản lý Album ảnh",
-        icon: Images,
-        tab: "albums",
-      },
-    ],
-  },
-  {
-    heading: "CHỨC NĂNG ĐĂNG BÀI",
-    items: [
-      { label: "Cấu hình Album nguồn", icon: SlidersHorizontal, tab: "media" },
-      { label: "Cấu hình lịch tự động", icon: CalendarDays, tab: "scheduler" },
-      { label: "Đăng bài viết nhóm", icon: FileText, tab: "publishing" },
-      { label: "Kiểm thử Pilot", icon: ClipboardCheck, tab: "pilot" },
-      { label: "Kiểm toán bảo mật", icon: ShieldCheck, tab: "security" },
-      { label: "Hiệu năng & ổn định", icon: Activity, tab: "performance" },
-      { label: "Nghiệm thu production", icon: ClipboardCheck, tab: "release" },
-      { label: "AI viết Caption", icon: Sparkles, tab: "caption" },
-      { label: "Lịch đăng bài", icon: CalendarDays, tab: "jobs" },
-      { label: "Lịch sử đăng bài", icon: Layers3, tab: "reports" },
-      { label: "Đối soát & Cảnh báo", icon: ShieldCheck, tab: "reconciliation" },
-    ],
-  },
-  {
-    heading: "CHỨC NĂNG KHÁC",
-    items: [
-      { label: "Bình luận tự động", icon: MessageSquare },
-    ],
-  },
+const navigation: { heading: string; advanced?: boolean; items: NavItem[] }[] = [
+  { heading: "TỔNG QUAN", items: [
+    { label: "Tổng quan", icon: LayoutDashboard, tab: "overview" },
+  ] },
+  { heading: "ĐĂNG BÀI", items: [
+    { label: "Tài khoản Facebook", icon: Users, tab: "accounts" },
+    { label: "Nhóm Facebook", icon: UsersRound, tab: "groups" },
+    { label: "Thư viện ảnh", icon: Images, tab: "albums" },
+    { label: "Ảnh dùng để đăng", icon: SlidersHorizontal, tab: "media" },
+    { label: "Nội dung bài viết", icon: Sparkles, tab: "caption" },
+    { label: "Lịch đăng", icon: CalendarDays, tab: "scheduler" },
+    { label: "Hàng đợi", icon: CalendarDays, tab: "jobs" },
+    { label: "Kết quả đăng", icon: Layers3, tab: "reports" },
+  ] },
+  { heading: "NÂNG CAO", advanced: true, items: [
+    { label: "Quản lý Proxy", icon: Network, tab: "proxies" },
+    { label: "Đăng bài thủ công", icon: FileText, tab: "publishing" },
+    { label: "Đối soát & Cảnh báo", icon: ShieldCheck, tab: "reconciliation" },
+    { label: "Thông báo & Cảnh báo", icon: Bell, tab: "alerts" },
+    { label: "Giám sát vận hành", icon: ShieldCheck, tab: "operations" },
+    { label: "Kiểm thử Pilot", icon: ClipboardCheck, tab: "pilot" },
+    { label: "Kiểm toán bảo mật", icon: ShieldCheck, tab: "security" },
+    { label: "Hiệu năng & ổn định", icon: Activity, tab: "performance" },
+    { label: "Nghiệm thu production", icon: ClipboardCheck, tab: "release" },
+    { label: "Bình luận tự động", icon: MessageSquare },
+  ] },
 ];
 
 const titles: Record<Tab, string> = {
@@ -155,6 +118,15 @@ const titles: Record<Tab, string> = {
 };
 
 const STORAGE_KEY = "toolnet-ctv-sidebar-collapsed";
+const subscribeSidebar = (listener: () => void) => {
+  window.addEventListener('storage', listener);
+  return () => window.removeEventListener('storage', listener);
+};
+const readSidebar = () => {
+  try { return localStorage.getItem(STORAGE_KEY) === 'true'; }
+  catch { return false; }
+};
+const serverSidebar = () => false;
 
 export default function CTVShell({
   workspace,
@@ -162,20 +134,15 @@ export default function CTVShell({
   workspace: WorkspacePayload;
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [mediaDirty, setMediaDirty] = useState(false);
   const [schedulerDirty, setSchedulerDirty] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const storedCollapsed = useSyncExternalStore(subscribeSidebar, readSidebar, serverSidebar);
+  const [collapsedOverride, setCollapsedOverride] = useState<boolean | null>(null);
+  const collapsed = collapsedOverride ?? storedCollapsed;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
-
-  useEffect(() => {
-    try {
-      setCollapsed(localStorage.getItem(STORAGE_KEY) === "true");
-    } catch {
-      // Private browsing may block localStorage.
-    }
-  }, []);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -208,15 +175,10 @@ export default function CTVShell({
   }
 
   function toggleSidebar() {
-    setCollapsed((current) => {
-      const next = !current;
-      try {
-        localStorage.setItem(STORAGE_KEY, String(next));
-      } catch {
-        // Continue with in-memory state.
-      }
-      return next;
-    });
+    const next = !collapsed;
+    setCollapsedOverride(next);
+    try { localStorage.setItem(STORAGE_KEY, String(next)); }
+    catch { /* Continue with in-memory state. */ }
   }
 
   async function logout() {
@@ -281,8 +243,12 @@ export default function CTVShell({
         <div className="ctv-sidebar-body">
           {navigation.map((group) => (
             <section key={group.heading} className="ctv-nav-group">
-              <div className="ctv-nav-heading">{group.heading}</div>
-              <nav aria-label={group.heading} className="ctv-nav">
+              {group.advanced ? <button type="button" className="ctv-nav-item"
+                aria-expanded={advancedOpen} aria-controls="ctv-advanced-menu" title="Nâng cao"
+                onClick={() => setAdvancedOpen((open) => !open)}><SlidersHorizontal size={17} strokeWidth={1.8} />
+                <span className="ctv-nav-text">Nâng cao {advancedOpen ? "▴" : "▾"}</span></button> :
+                <div className="ctv-nav-heading">{group.heading}</div>}
+              <nav id={group.advanced ? "ctv-advanced-menu" : undefined} aria-label={group.heading} className="ctv-nav" hidden={group.advanced && !advancedOpen}>
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const active = activeTab === item.tab && !!item.tab;
