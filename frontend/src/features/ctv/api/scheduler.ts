@@ -25,8 +25,8 @@ export type ScheduleWrite = Pick<PipelineSchedule,
 export interface ScheduledAssignment {
   group_id: string;
   account_id: string;
-  proxy_id: string;
-  exit_ip: string;
+  proxy_id: string | null;
+  exit_ip: string | null;
   scheduled_at: string;
   caption?: string;
   will_pin_proxy?: boolean;

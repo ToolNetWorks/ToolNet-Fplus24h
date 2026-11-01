@@ -58,7 +58,7 @@ def _batch_payload(batch):
                 'job_id': str(row.job_id),
                 'group_id': str(row.group_id),
                 'account_id': str(row.account_id),
-                'proxy_id': str(row.proxy_id),
+                'proxy_id': str(row.proxy_id) if row.proxy_id else None,
                 'exit_ip': row.exit_ip_snapshot,
                 'scheduled_at': row.scheduled_at.isoformat(),
             }
@@ -69,7 +69,18 @@ def _batch_payload(batch):
     }
 
 
-def _eligible_accounts(pipeline, accounts, now):
+def _using_direct(pipeline):
+    from modules.facebook_publishing.models import WorkerConfig, ConnectionMode
+    config = WorkerConfig.objects.filter(pipeline_id=pipeline.pk).first()
+    return bool(config and config.connection_mode == ConnectionMode.DIRECT)
+
+
+def _eligible_accounts(pipeline, accounts, now, *, direct=None):
+    from modules.facebook_accounts.credentials import FacebookCookieSecret
+    direct = _using_direct(pipeline) if direct is None else direct
+    cookie_accounts = set(FacebookCookieSecret.objects.filter(
+        account_id__in=[x.pk for x in accounts], cookie_count__gt=0,
+    ).values_list('account_id', flat=True)) if direct else set()
     proxy_by_account = {
         proxy.account_id: proxy
         for proxy in ProxyEndpoint.objects.filter(
@@ -85,6 +96,10 @@ def _eligible_accounts(pipeline, accounts, now):
     for account in accounts:
         if account.pk in held_account_ids:
             continue  # Never schedule a second job while prior posting is unverified.
+        if direct:
+            if account.pk in cookie_accounts:
+                valid[account.pk] = (account, None, None)
+            continue
         proxy = proxy_by_account.get(account.pk)
         if not proxy or not proxy.is_enabled or proxy.health_status != ProxyEndpoint.HealthStatus.HEALTHY:
             continue
@@ -181,7 +196,8 @@ def plan_schedule(*, schedule_id, commit=False, now=None):
         pipeline_id=pipeline.pk,
         connection_status=FacebookAccount.ConnectionStatus.CONNECTED,
     ).order_by('pk'))
-    valid_accounts = _eligible_accounts(pipeline, accounts, now)
+    direct = _using_direct(pipeline)
+    valid_accounts = _eligible_accounts(pipeline, accounts, now, direct=direct)
     groups = list(FacebookGroup.objects.filter(pipeline_id=pipeline.pk).order_by('pk'))
     group_health = {
         row.group_id: row
@@ -234,8 +250,8 @@ def plan_schedule(*, schedule_id, commit=False, now=None):
             continue
         eligible_ids = eligibilities.get(group.pk, ())
         if not eligible_ids:
-            code = ('ACCOUNT_PROXY_NOT_READY' if verified_pairs.get(group.pk)
-                    else 'NO_VERIFIED_ELIGIBLE_ACCOUNT')
+            code = (('ACCOUNT_DIRECT_NOT_READY' if direct else 'ACCOUNT_PROXY_NOT_READY')
+                    if verified_pairs.get(group.pk) else 'NO_VERIFIED_ELIGIBLE_ACCOUNT')
             skipped.append({'group_id': str(group.pk), 'code': code})
             continue
         choices = [
@@ -259,9 +275,10 @@ def plan_schedule(*, schedule_id, commit=False, now=None):
             continue
         assigned.append({
             'group_id': str(group.pk), 'account_id': str(account.pk),
-            'proxy_id': str(proxy.pk), 'exit_ip': str(proxy.exit_ip),
+            'proxy_id': str(proxy.pk) if proxy else None,
+            'exit_ip': str(proxy.exit_ip) if proxy else None,
             'scheduled_at': at.isoformat(), 'caption': caption,
-            'will_pin_proxy': pin is None,
+            'will_pin_proxy': bool(proxy and pin is None),
         })
         assigned_in_batch[acc_id] += 1
         account_count[acc_id] += 1
@@ -283,16 +300,17 @@ def plan_schedule(*, schedule_id, commit=False, now=None):
     for assignment in assigned:
         account_id = assignment['account_id']
         proxy_id = assignment['proxy_id']
-        pin, created = AccountProxyPin.objects.get_or_create(
-            account_id=account_id,
-            defaults={
-                'pipeline': pipeline,
-                'proxy_id': proxy_id,
-                'pinned_exit_ip': assignment['exit_ip'],
-            },
-        )
-        if not created and (str(pin.proxy_id) != proxy_id or pin.pinned_exit_ip != assignment['exit_ip']):
-            raise ScheduleError('Proxy Pin đã thay đổi, hủy toàn bộ batch.')
+        if proxy_id:
+            pin, created = AccountProxyPin.objects.get_or_create(
+                account_id=account_id,
+                defaults={
+                    'pipeline': pipeline,
+                    'proxy_id': proxy_id,
+                    'pinned_exit_ip': assignment['exit_ip'],
+                },
+            )
+            if not created and (str(pin.proxy_id) != proxy_id or pin.pinned_exit_ip != assignment['exit_ip']):
+                raise ScheduleError('Proxy Pin đã thay đổi, hủy toàn bộ batch.')
         request_key = 'sch-' + _stable_rank(schedule.pk, slot.isoformat(), assignment['group_id'])
         job = enqueue_job(
             pipeline_id=pipeline.pk,

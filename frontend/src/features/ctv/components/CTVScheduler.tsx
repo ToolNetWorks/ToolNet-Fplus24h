@@ -70,6 +70,7 @@ const reasonLabel: Record<string, string> = {
   GROUP_HAS_PENDING_JOB: "Group còn Job chưa hoàn tất",
   GROUP_COOLDOWN: "Group chưa qua thời gian giãn cách",
   ACCOUNT_PROXY_NOT_READY: "Account/Proxy không đủ điều kiện",
+  ACCOUNT_DIRECT_NOT_READY: "Account DIRECT chưa có cookie hợp lệ hoặc đang bị giữ",
   NO_VERIFIED_ELIGIBLE_ACCOUNT: "Chưa xác minh quyền đăng với Account",
   ACCOUNT_CAPACITY_EXHAUSTED: "Account đã đạt giới hạn nội bộ",
   CAPTION_TOO_LONG: "Caption vượt 5.000 ký tự",
@@ -489,7 +490,7 @@ export default function CTVScheduler({ pipelineId, onDirtyChange }: {
               <p className="text-xs text-slate-500">Lượt: {timeLabel(preview.slot_at)}{preview.replayed ? " · Đã tồn tại từ trước" : ""}</p>
               <h3 className="text-xs font-semibold text-slate-800">Phân phối Account – Group</h3>
               <div className="max-h-72 overflow-auto rounded-md border border-slate-200"><table className="min-w-full text-left text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-600"><tr><th className="px-3 py-2">Group ID</th><th className="px-3 py-2">Account ID</th><th className="px-3 py-2">Proxy/IP</th><th className="px-3 py-2">Dự kiến</th></tr></thead><tbody>
-                {preview.assignments.length === 0 ? <tr><td colSpan={4} className="px-3 py-4 text-slate-500">Không có nhóm đủ điều kiện.</td></tr> : preview.assignments.map((item, i) => <tr key={`${item.group_id}-${i}`} className="border-t"><td title={item.group_id} className="px-3 py-2 font-mono">{item.group_id.slice(0, 8)}</td><td title={item.account_id} className="px-3 py-2 font-mono">{item.account_id.slice(0, 8)}</td><td className="px-3 py-2">{item.exit_ip}</td><td className="px-3 py-2 whitespace-nowrap">{timeLabel(item.scheduled_at)}</td></tr>)}
+                {preview.assignments.length === 0 ? <tr><td colSpan={4} className="px-3 py-4 text-slate-500">Không có nhóm đủ điều kiện.</td></tr> : preview.assignments.map((item, i) => <tr key={`${item.group_id}-${i}`} className="border-t"><td title={item.group_id} className="px-3 py-2 font-mono">{item.group_id.slice(0, 8)}</td><td title={item.account_id} className="px-3 py-2 font-mono">{item.account_id.slice(0, 8)}</td><td className="px-3 py-2">{item.exit_ip ?? "DIRECT"}</td><td className="px-3 py-2 whitespace-nowrap">{timeLabel(item.scheduled_at)}</td></tr>)}
               </tbody></table></div>
               <h3 className="text-xs font-semibold text-slate-800">Group bị bỏ qua ({preview.skipped.length})</h3>
               <div className="max-h-52 overflow-auto rounded-md border border-slate-200"><table className="min-w-full text-left text-xs"><thead className="sticky top-0 bg-slate-50"><tr><th className="px-3 py-2">Group ID</th><th className="px-3 py-2">Lý do</th></tr></thead><tbody>{preview.skipped.length === 0 ? <tr><td colSpan={2} className="px-3 py-3 text-slate-500">Không có Group bị bỏ qua.</td></tr> : preview.skipped.map((row, i) => <tr key={`${row.group_id}-${i}`} className="border-t"><td title={row.group_id} className="px-3 py-2 font-mono">{row.group_id.slice(0, 8)}</td><td className="px-3 py-2">{reasonLabel[row.code] ?? row.code}</td></tr>)}</tbody></table></div>

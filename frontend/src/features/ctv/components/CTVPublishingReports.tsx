@@ -23,6 +23,7 @@ const skipReasons: Record<string, string> = {
   GROUP_HAS_PENDING_JOB: "Group còn Job chưa hoàn tất",
   GROUP_COOLDOWN: "Group chưa hết thời gian giãn cách",
   ACCOUNT_PROXY_NOT_READY: "Account/Proxy không hợp lệ",
+  ACCOUNT_DIRECT_NOT_READY: "Account DIRECT chưa sẵn sàng",
   NO_VERIFIED_ELIGIBLE_ACCOUNT: "Chưa xác minh quyền đăng ẩn danh / không tham gia Group",
   ACCOUNT_CAPACITY_EXHAUSTED: "Account đạt giới hạn nội bộ",
   CAPTION_TOO_LONG: "Caption quá 5.000 ký tự",

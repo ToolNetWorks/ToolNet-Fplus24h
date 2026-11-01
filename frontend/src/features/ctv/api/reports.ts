@@ -61,8 +61,8 @@ export interface BatchJob {
   group_id: string;
   group_name: string;
   group_url: string;
-  proxy_id: string;
-  exit_ip_snapshot: string;
+  proxy_id: string | null;
+  exit_ip_snapshot: string | null;
   scheduled_at: string;
   job_state: ReportJobState;
   job_error_code: string | null;

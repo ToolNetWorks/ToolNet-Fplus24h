@@ -207,11 +207,16 @@ class ScheduledAssignment(models.Model):
                                related_name='scheduled_assignment')
     account = models.ForeignKey('facebook_accounts.FacebookAccount', on_delete=models.PROTECT)
     group = models.ForeignKey('facebook_groups.FacebookGroup', on_delete=models.PROTECT)
-    proxy = models.ForeignKey('proxies.ProxyEndpoint', on_delete=models.PROTECT)
-    exit_ip_snapshot = models.GenericIPAddressField()
+    proxy = models.ForeignKey('proxies.ProxyEndpoint', on_delete=models.PROTECT,
+                              null=True, blank=True)
+    exit_ip_snapshot = models.GenericIPAddressField(null=True, blank=True)
     scheduled_at = models.DateTimeField()
 
     class Meta:
         db_table = 'publisher_scheduled_assignments'
         constraints = [models.UniqueConstraint(fields=['batch', 'group'],
-                                               name='pubsch_group_once_per_batch')]
+                                               name='pubsch_group_once_per_batch'),
+                       models.CheckConstraint(
+                           condition=(Q(proxy__isnull=True, exit_ip_snapshot__isnull=True) |
+                                      Q(proxy__isnull=False, exit_ip_snapshot__isnull=False)),
+                           name='pubsch_proxy_exit_pair')]

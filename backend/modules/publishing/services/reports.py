@@ -172,7 +172,7 @@ def report_batch_detail(*, pipeline_id, batch_id):
                 'account_id': str(row.account_id), 'account_label': row.account.label,
                 'group_id': str(row.group_id), 'group_name': row.group.name,
                 'group_url': row.group.group_url,
-                'proxy_id': str(row.proxy_id),
+                'proxy_id': str(row.proxy_id) if row.proxy_id else None,
                 'exit_ip_snapshot': row.exit_ip_snapshot,
                 'scheduled_at': row.scheduled_at.isoformat(),
                 'job_state': row.job.state,
