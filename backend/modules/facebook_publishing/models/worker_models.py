@@ -39,7 +39,7 @@ class ConnectionMode(models.TextChoices):
 
 
 class WorkerConfig(models.Model):
-    """Per-Pipeline Facebook Publishing Worker enablement and dry-run flag."""
+    """Per-Pipeline Facebook Publishing Worker configuration."""
 
     pipeline = models.OneToOneField(
         'pipelines.Pipeline', on_delete=models.PROTECT,
@@ -49,6 +49,7 @@ class WorkerConfig(models.Model):
         default=False,
         help_text='MASTER SWITCH. Must be explicitly set to True in production.',
     )
+    # Retained as a legacy database column; it no longer controls publishing.
     dry_run = models.BooleanField(
         default=True,
         help_text='Validate everything but never click Post or create a real post.',
@@ -148,8 +149,6 @@ class WorkerPublishJob(models.Model):
         if self.proxy_id and self.pipeline_id:
             if self.proxy.pipeline_id != self.pipeline_id:
                 raise ValidationError({'proxy': 'Proxy không thuộc Pipeline.'})
-        if self.pk is None and not self.dry_run and not self._state.adding:
-            pass
 
     def add_audit(self, event, detail=None, sensitive=False):
         entry = {

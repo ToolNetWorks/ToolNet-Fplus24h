@@ -6,7 +6,7 @@ Interacts with the Facebook Groups composer through the browser UI:
 - Activate the anonymous posting toggle inside the composer
 - Fill the caption text
 - Attach the staged image
-- (In non-dry-run mode) Submit the post
+- Submit the post
 
 Never replays private GraphQL requests from the HAR.
 """
@@ -310,14 +310,7 @@ class AnonymousComposer:
             raise AnonymousComposerError(f'Failed to attach image: {exc}') from exc
 
     def submit_post(self) -> ComposerActionResult:
-        """Submit the post by clicking the Post button.
-
-        Called ONLY when dry_run is False. In dry_run mode, this must NOT be called.
-        """
-        if self._settings.dry_run:
-            raise AnonymousComposerError(
-                'Cannot submit post in DRY_RUN mode.'
-            )
+        """Submit the post by clicking the Post button once."""
         self._log('Submitting post')
         try:
             button = self._composer_dialog().get_by_role(

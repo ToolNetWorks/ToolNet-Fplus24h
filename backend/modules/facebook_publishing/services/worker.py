@@ -4,7 +4,6 @@ The Worker claims a PublishingJob, validates Account/Proxy/Group eligibility,
 stages media, launches a browser, and interacts with the Facebook UI via
 Playwright to publish anonymously.
 
-In DRY_RUN mode, the Worker validates everything but never clicks Post.
 """
 import logging
 import asyncio
@@ -238,14 +237,10 @@ def _can_publish(settings: WorkerSettings, config: Optional[WorkerConfig]) -> bo
     Both env-level and DB-level must agree.
     """
     env_enabled = settings.enabled
-    env_dry_run = settings.dry_run
     db_enabled = config.enabled if config else False
-    db_dry_run = config.dry_run if config else True
 
-    # Publishing is only allowed when both agree it is enabled AND not dry_run
+    # Both worker settings and the per-pipeline switch must enable publishing.
     if not env_enabled or not db_enabled:
-        return False
-    if env_dry_run or db_dry_run:
         return False
     return True
 
@@ -270,7 +265,7 @@ def _create_publish_job_record(*, pipeline_id, job, worker_id, settings,
         worker_id=worker_id,
         state=WorkerResultState.QUEUED,
         attempt_number=job.attempt_count,
-        dry_run=settings.dry_run,
+        dry_run=False,  # Historical audit field: this is a real publishing attempt.
     )
     return worker_job
 
@@ -282,9 +277,6 @@ def claim_job(*, pipeline_id, worker_id, lease_seconds=600, job_id=None):
     """
     settings = load_settings(pipeline_id)
     config = _validate_pipeline_enabled(pipeline_id, settings)
-
-    if settings.dry_run:
-        logger.info('Worker is in DRY_RUN mode for Pipeline %s.', pipeline_id)
 
     claim = claim_due_job(
         pipeline_id=pipeline_id, worker_id=worker_id, lease_seconds=lease_seconds,
@@ -617,240 +609,9 @@ def launch_browser(session, settings: WorkerSettings, audit=None) -> BrowserMana
         raise WorkerError(f'Browser launch failed: {exc}') from exc
 
 
-def run_dry_run(session, settings: WorkerSettings, eligibility, caption,
-                claim_result):
-    """DRY_RUN: validate everything but do NOT click Post or create a real post.
-
-    New flow:
-    1. Open the Group.
-    2. Verify the correct account (browser_manager).
-    3. Open the composer.
-    4. Check anonymous posting permission.
-    5. Enable anonymous mode.
-    6. Verify the anonymous author.
-    7. Fill in the approved Caption.
-    8. Verify the R2 image.
-    9. Stop before the Post button.
-
-    Even if all checks pass, the PublishingJob remains in READY/CLAIMED state.
-    The job's Job Engine state is NOT advanced (no begin_dispatch, no post).
-    """
-    audit = AuditLogger(
-        worker_id=session.worker_id,
-        job_id=str(session.publish_job.job_id),
-    )
-    browser_mgr = None
-
-    try:
-        # Step 1: Launch test browser
-        browser_mgr = launch_browser(session, settings, audit)
-        audit.log_event('browser_launched_dry_run')
-
-        # Step 2: Verify cookies loaded
-        if session.bundle and session.bundle.has_cookies:
-            audit.log_event(
-                'encrypted_cookies_loaded',
-                count=session.bundle.encrypted_cookies_count,
-            )
-        else:
-            audit.log_event('no_encrypted_cookies',
-                            detail='Worker will still attempt verification.')
-
-        page = session.page
-
-        # Step 3: Navigate to the Group
-        group_url = session.publish_job.group.group_url
-        page.goto(group_url, timeout=int(settings.browser_timeout_seconds) * 1000)
-        page.wait_for_timeout(2000)
-        audit.log_event('navigated_to_group_dry_run')
-
-        # Step 4: Open the composer
-        composer = AnonymousComposer(page, settings, session.bundle.account.label)
-        composer.open_composer()
-        audit.log_event('composer_opened_dry_run')
-
-        composer.open_author_menu()
-        audit.log_event('author_menu_opened_dry_run')
-
-        # Step 5: Check anonymous posting permission inside composer
-        anon_available = composer.check_anonymous_posting_available()
-        audit.log_event(
-            'anonymous_posting_checked',
-            is_available=anon_available,
-        )
-
-        if not anon_available:
-            worker_job = session.publish_job
-            worker_job.state = WorkerResultState.FAILED
-            worker_job.error_code = 'NO_ANONYMOUS_TOGGLE'
-            _safe_save(worker_job, update_fields=['state', 'error_code'])
-            audit.log_transition(
-                from_state=WorkerResultState.READY,
-                to_state=WorkerResultState.FAILED,
-                reason='No anonymous posting toggle found in composer',
-            )
-            # Release the job back to QUEUED for possible retry
-            from modules.publishing.services.job_engine import fail_before_dispatch
-            try:
-                _db_call(fail_before_dispatch,
-                    pipeline_id=session.publish_job.pipeline_id,
-                    job_id=str(session.publish_job.job_id),
-                    claim_token=claim_result['claim_token'],
-                    error_code='NO_ANONYMOUS_TOGGLE',
-                    retry_delay_seconds=300,
-                )
-                audit.log_event('job_released_to_queue',
-                                reason='Anonymous toggle not available in composer')
-            except Exception:
-                pass
-            return {
-                'result': 'failure',
-                'reason': 'Anonymous posting toggle not found in composer.',
-                'eligibility': {
-                    'is_eligible': eligibility.is_eligible,
-                    'can_post_anonymous': eligibility.can_post_anonymous,
-                    'membership_status': eligibility.membership_status,
-                },
-            }
-
-        # Step 6: Enable anonymous mode
-        anon_result = composer.activate_anonymous()
-        audit.log_event(
-            'anonymous_activation_result',
-            success=anon_result.success,
-            detail=anon_result.detail,
-        )
-        if not anon_result.success:
-            worker_job = session.publish_job
-            worker_job.state = WorkerResultState.FAILED
-            worker_job.error_code = 'ANONYMOUS_UI_UNCONFIRMED'
-            _safe_save(worker_job, update_fields=['state', 'error_code'])
-            audit.log_transition(
-                from_state=WorkerResultState.READY,
-                to_state=WorkerResultState.FAILED,
-                reason='Anonymous mode could not be confirmed as enabled',
-            )
-            from modules.publishing.services.job_engine import fail_before_dispatch
-            try:
-                _db_call(fail_before_dispatch,
-                    pipeline_id=session.publish_job.pipeline_id,
-                    job_id=str(session.publish_job.job_id),
-                    claim_token=claim_result['claim_token'],
-                    error_code='ANONYMOUS_UI_UNCONFIRMED',
-                    retry_delay_seconds=300,
-                )
-            except Exception:
-                pass
-            return {
-                'result': 'failure',
-                'reason': 'Anonymous mode could not be confirmed as enabled in composer.',
-                'eligibility': {
-                    'is_eligible': eligibility.is_eligible,
-                    'can_post_anonymous': eligibility.can_post_anonymous,
-                    'membership_status': eligibility.membership_status,
-                },
-            }
-
-        # Verify anonymous author state
-        anon_enabled = composer.is_anonymous_enabled()
-        audit.log_event(
-            'anonymous_author_verified',
-            enabled=anon_enabled,
-        )
-        if not anon_enabled:
-            raise WorkerError('Anonymous author could not be verified.')
-
-        session.publish_job.state = WorkerResultState.ANONYMOUS_ENABLED
-        _safe_save(session.publish_job, update_fields=['state'])
-
-        composer.fill_caption(caption)
-        audit.log_event('caption_filled_dry_run', length=len(caption))
-        # Stage and verify the image without submitting.
-        images_downloaded = 0
-        stager = MediaStager(settings)
-        staged = []
-        try:
-            if session.image_ids:
-                staged = _db_call(stager.stage_all,
-                    pipeline_id=session.publish_job.pipeline_id,
-                    image_ids=session.image_ids,
-                )
-                images_downloaded = len(staged)
-                audit.log_event(
-                    'images_downloaded_dry_run', count=images_downloaded,
-                )
-                for img in staged:
-                    composer.attach_image(img.temp_path)
-            if not staged:
-                raise WorkerError('No image was staged for the dry run.')
-            if not composer.verify_caption(caption) or not composer.is_anonymous_enabled():
-                raise WorkerError('Caption or anonymous author changed during media upload.')
-        finally:
-            stager.cleanup()
-
-        # Step 9: Stop before Post button (DRY_RUN)
-        audit.log_event('dry_run_ready_to_submit',
-                        caption_length=len(caption),
-                        anon_checked=anon_available,
-                        anon_enabled=anon_enabled,
-                        images_downloaded=images_downloaded)
-
-        worker_job = session.publish_job
-        worker_job.state = WorkerResultState.READY
-        _safe_save(worker_job, update_fields=['state'])
-
-        # Release the job back to QUEUED so the Job Engine can manage it
-        audit.log_transition(
-            from_state=WorkerResultState.READY,
-            to_state=WorkerResultState.READY,
-            note='DRY_RUN complete - no post submitted, job released to queue',
-        )
-
-        return {
-            'result': 'success',
-            'reason': 'DRY_RUN completed successfully. No post was submitted.',
-            'eligibility': {
-                'is_eligible': eligibility.is_eligible,
-                'can_post_anonymous': eligibility.can_post_anonymous,
-                'membership_status': eligibility.membership_status,
-            },
-            'media': {
-                'images_count': images_downloaded,
-                'image_ids': session.image_ids,
-                'caption_length': len(caption),
-            },
-            'anonymous': {
-                'available': anon_available,
-                'enabled': anon_enabled,
-            },
-        }
-
-    except WorkerError:
-        raise
-    except Exception as exc:
-        audit.log_error('DRY_RUN_ERROR', str(exc))
-        worker_job = session.publish_job
-        worker_job.state = WorkerResultState.FAILED
-        worker_job.error_code = 'DRY_RUN_ERROR'
-        worker_job.error_detail = str(exc)[:2000]
-        try:
-            _safe_save(worker_job, update_fields=['state', 'error_code', 'error_detail'])
-        except Exception:
-            pass  # DB write may fail after Playwright; job state will be stale
-        raise WorkerError(f'DRY_RUN failed: {exc}') from exc
-    finally:
-        if browser_mgr:
-            browser_mgr.close_context(session.context)
-            browser_mgr.shutdown()
-
-
 def run_publish(session, settings: WorkerSettings, eligibility, caption,
                 claim_token, config):
-    """Non-dry-run: click Post once and record the click without a visibility claim.
-
-    WARNING: This only runs when FACEBOOK_PUBLISHING_ENABLED=true AND
-    FACEBOOK_PUBLISHING_DRY_RUN=false.
-    """
+    """Click Post once and record the click without claiming visibility."""
     job = session.publish_job
     audit = AuditLogger(
         worker_id=session.worker_id,
@@ -865,12 +626,11 @@ def run_publish(session, settings: WorkerSettings, eligibility, caption,
         if not _can_publish(settings, config):
             audit.log_error(
                 'PUBLISH_NOT_ALLOWED',
-                'Worker is in dry-run mode or disabled. Not submitting.',
+                'Worker is disabled. Not submitting.',
             )
             raise WorkerError(
                 'Real publishing is not enabled. '
-                'Set FACEBOOK_PUBLISHING_ENABLED=true and '
-                'FACEBOOK_PUBLISHING_DRY_RUN=false.'
+                'Enable the publishing worker for this Pipeline.'
             )
 
         # Step: Launch browser and load cookies

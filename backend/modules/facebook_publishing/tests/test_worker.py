@@ -159,6 +159,32 @@ class FacebookPublishingWorkerTestBase(TestCase):
 
 
 class TestTargetedJobClaim(FacebookPublishingWorkerTestBase):
+    def test_legacy_dry_run_flag_does_not_control_publishing(self):
+        from modules.facebook_publishing.services.worker import _can_publish
+        self.config.dry_run = True
+        self.config.save()
+        settings = load_settings(self.pipeline.pk)
+        self.assertTrue(_can_publish(settings, self.config))
+        self.config.enabled = False
+        self.assertFalse(_can_publish(settings, self.config))
+
+    def test_enabled_worker_uses_publishing_flow(self):
+        from types import SimpleNamespace
+        from modules.facebook_publishing.management.commands.facebook_publishing_worker import Command
+        prefix = 'modules.facebook_publishing.management.commands.facebook_publishing_worker.'
+        worker_job = MagicMock()
+        session = SimpleNamespace(publish_job=worker_job, bundle=SimpleNamespace(account_id=self.account.pk))
+        settings = WorkerSettings(enabled=True)
+        claim = {'settings': settings, 'config': self.config, 'claim_token': 'test', 'worker_job': worker_job}
+        with patch(prefix + 'claim_job', return_value=claim), \
+             patch(prefix + 'prepare_session', return_value=session), \
+             patch(prefix + 'prepare_media', return_value=('caption', {'images': []})), \
+             patch(prefix + 'check_group_eligibility'), \
+             patch(prefix + 'release_running_op'), \
+             patch(prefix + 'run_publish', return_value={'result': 'submitted'}) as publish:
+            Command()._process_one(self.pipeline.pk, 'worker', False, MagicMock())
+        publish.assert_called_once()
+
     def test_real_publish_requires_specific_image(self):
         from django.core.management import call_command, CommandError
         with self.assertRaisesRegex(CommandError, '--expected-image-id'):
@@ -171,7 +197,7 @@ class TestTargetedJobClaim(FacebookPublishingWorkerTestBase):
         prefix = 'modules.facebook_publishing.management.commands.facebook_publishing_worker.'
         worker_job = MagicMock()
         session = SimpleNamespace(publish_job=worker_job, image_ids=[str(uuid.uuid4())])
-        settings = WorkerSettings(enabled=True, dry_run=True)
+        settings = WorkerSettings(enabled=True)
         claim = {'settings': settings, 'config': self.config, 'claim_token': 'test', 'worker_job': worker_job}
         with patch(prefix + 'claim_job', return_value=claim), \
              patch(prefix + 'prepare_session', return_value=session), \
@@ -352,7 +378,7 @@ class TestAccountWithoutAnonymousPermission(FacebookPublishingWorkerTestBase):
         job = self._create_job()
 
         settings = WorkerSettings(
-            enabled=True, dry_run=True, browser_timeout_seconds=120,
+            enabled=True, browser_timeout_seconds=120,
             max_retry_attempts=3, playwright_headless=True,
             facebook_base_url='https://www.facebook.com',
         )
@@ -489,7 +515,7 @@ class TestAdminApprovalRequired(FacebookPublishingWorkerTestBase):
         page.query_selector.return_value = None
 
         settings = WorkerSettings(
-            enabled=True, dry_run=False, browser_timeout_seconds=120,
+            enabled=True, browser_timeout_seconds=120,
             max_retry_attempts=3, playwright_headless=True,
             facebook_base_url='https://www.facebook.com',
         )
@@ -506,7 +532,7 @@ class TestAdminApprovalRequired(FacebookPublishingWorkerTestBase):
         page.query_selector.return_value = None  # No article elements found
 
         settings = WorkerSettings(
-            enabled=True, dry_run=False, browser_timeout_seconds=120,
+            enabled=True, browser_timeout_seconds=120,
             max_retry_attempts=3, playwright_headless=True,
             facebook_base_url='https://www.facebook.com',
         )
@@ -529,7 +555,7 @@ class TestBrowserTimeout(FacebookPublishingWorkerTestBase):
         )
 
         settings = WorkerSettings(
-            enabled=True, dry_run=False, browser_timeout_seconds=5,
+            enabled=True, browser_timeout_seconds=5,
             max_retry_attempts=3, playwright_headless=True,
             facebook_base_url='https://www.facebook.com',
         )

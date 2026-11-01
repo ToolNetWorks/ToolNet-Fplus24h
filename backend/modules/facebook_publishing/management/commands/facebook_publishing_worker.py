@@ -1,22 +1,19 @@
 """Facebook Publishing Worker management command.
 
-Runs the Worker loop: claims a job, prepares, and (in DRY_RUN or real mode)
-processes it.
+Runs the Worker loop: claims, prepares and publishes a job.
 """
 import logging
 import socket
 import time
 import uuid
-from copy import copy
-from dataclasses import replace
 
 from django.core.management.base import BaseCommand, CommandError
 
 from modules.pipelines.models import Pipeline
 from modules.facebook_publishing.services.config import load_settings
 from modules.facebook_publishing.services.worker import (
-    claim_job, prepare_session, prepare_media, run_dry_run, run_publish,
-    WorkerError, WorkerNotEnabledError, _can_publish,
+    claim_job, prepare_session, prepare_media, run_publish,
+    WorkerError, WorkerNotEnabledError,
 )
 from modules.facebook_publishing.services.account_binding import release_running_op
 from modules.facebook_publishing.services.audit_log import AuditLogger
@@ -44,8 +41,7 @@ class Command(BaseCommand):
         parser.add_argument('--worker-id',
                             default='fb-worker-' + socket.gethostname().split('.')[0][:30])
         parser.add_argument('--force-publish', action='store_true',
-                            help='Override dry-run and submit a real post. '
-                                 'Requires FACEBOOK_PUBLISHING_ENABLED=true.')
+                            help='Process exactly one specified job and expected image.')
 
     def handle(self, *args, **kwargs):
         pipeline_id = kwargs['pipeline_id']
@@ -110,25 +106,6 @@ class Command(BaseCommand):
         config = claim_result.get('config')
         claim_token = claim_result['claim_token']
 
-        if force_publish:
-            # Override dry-run for exactly one post
-            if not settings.enabled and not _can_publish(settings, config):
-                logger.error('Cannot force-publish: Worker is disabled.')
-                self.stdout.write('ERROR: Worker is disabled.')
-                return
-            from dataclasses import replace
-            settings = replace(settings, dry_run=False, enabled=True)
-            if config:
-                config = copy(config)
-                config.dry_run = False
-                config.enabled = True
-            claim_result['worker_job'].dry_run = False
-            claim_result['worker_job'].save(update_fields=['dry_run'])
-            logger.info('Force publish override applied.')
-            audit.log_event('force_publish_override_applied')
-
-        is_dry_run = settings.dry_run if not config else config.dry_run
-
         try:
             session = prepare_session(claim_result, settings)
             audit.log_event('session_prepared', ready=True)
@@ -159,25 +136,15 @@ class Command(BaseCommand):
                 group_id=session.publish_job.group_id,
             )
 
-            if is_dry_run:
-                result = run_dry_run(
-                    session, settings, eligibility, caption, claim_result,
-                )
-                audit.log_event(
-                    'dry_run_completed',
-                    result=result.get('result', 'unknown'),
-                )
-                self.stdout.write(json.dumps(result, default=str, ensure_ascii=False))
-            else:
-                result = run_publish(
-                    session, settings, eligibility, caption,
-                    claim_token, config,
-                )
-                audit.log_event(
-                    'publish_completed',
-                    result=result.get('result', 'unknown'),
-                )
-                self.stdout.write(json.dumps(result, default=str, ensure_ascii=False))
+            result = run_publish(
+                session, settings, eligibility, caption,
+                claim_token, config,
+            )
+            audit.log_event(
+                'publish_completed',
+                result=result.get('result', 'unknown'),
+            )
+            self.stdout.write(json.dumps(result, default=str, ensure_ascii=False))
 
         except WorkerNotEnabledError:
             self.stdout.write('Worker not enabled for this Pipeline.')
