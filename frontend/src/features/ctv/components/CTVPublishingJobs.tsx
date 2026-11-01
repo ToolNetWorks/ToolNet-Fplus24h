@@ -22,7 +22,7 @@ const formatted = (date: string) => new Date(date).toLocaleString("vi-VN");
 
 export default function CTVPublishingJobs({ pipelineId }: { pipelineId: string }) {
   const [result, setResult] = useState<JobList | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [settledRequest, setSettledRequest] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [revision, setRevision] = useState(0);
@@ -46,16 +46,17 @@ export default function CTVPublishingJobs({ pipelineId }: { pipelineId: string }
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<(PublishingJob & { attempts: JobAttempt[] }) | null>(null);
 
+  const requestKey = JSON.stringify([pipelineId, page, pageSize, state, search, revision]);
+  const loading = settledRequest !== requestKey;
   const refresh = () => setRevision((v) => v + 1);
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setError("");
     listPublishingJobs(pipelineId, { page, pageSize, state, search }, controller.signal)
-      .then((data) => { if (!controller.signal.aborted) setResult(data); })
+      .then((data) => { if (!controller.signal.aborted) { setResult(data); setError(""); } })
       .catch((cause: unknown) => { if (!controller.signal.aborted) { setResult(null); setError(errorText(cause)); } })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      .finally(() => { if (!controller.signal.aborted) setSettledRequest(requestKey); });
     return () => controller.abort();
-  }, [pipelineId, page, pageSize, state, search, revision]);
+  }, [pipelineId, page, pageSize, state, search, requestKey]);
 
   useEffect(() => {
     if (!modal) return;

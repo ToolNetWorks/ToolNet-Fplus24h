@@ -82,12 +82,14 @@ export default function CTVPublishingReports({ pipelineId }: { pipelineId: strin
   const [error, setError] = useState("");
   const [scheduleError, setScheduleError] = useState("");
   const [detailError, setDetailError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [settledRequest, setSettledRequest] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const filters: ReportFilters = useMemo(() => ({
     days, scheduleId, page, pageSize: 20, search,
   }), [days, scheduleId, page, search]);
+  const requestKey = JSON.stringify([pipelineId, days, scheduleId, page, search, revision, tab]);
+  const loading = settledRequest !== requestKey;
   const activePage = tab === "batches" ? batches?.pagination :
     tab === "groups" ? groups?.pagination : tab === "accounts" ? accounts?.pagination : undefined;
   const reload = () => setRevision((value) => value + 1);
@@ -103,7 +105,6 @@ export default function CTVPublishingReports({ pipelineId }: { pipelineId: strin
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setError("");
     const load = async () => {
       // The overview figures are fetched separately so failures never appear as zero.
       const summaryPromise = reportSummary(pipelineId, filters, controller.signal);
@@ -112,6 +113,7 @@ export default function CTVPublishingReports({ pipelineId }: { pipelineId: strin
         tab === "accounts" ? reportAccounts(pipelineId, filters, controller.signal) : Promise.resolve(null);
       const [summaryResult, rowsResult] = await Promise.allSettled([summaryPromise, rowsPromise]);
       if (controller.signal.aborted) return;
+      setError("");
       if (summaryResult.status === "fulfilled") setSummary(summaryResult.value);
       else { setSummary(null); setError(errorText(summaryResult.reason)); }
       if (rowsResult.status === "fulfilled") {
@@ -125,9 +127,9 @@ export default function CTVPublishingReports({ pipelineId }: { pipelineId: strin
         setError((current) => current || errorText(rowsResult.reason));
       }
     };
-    void load().finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    void load().finally(() => { if (!controller.signal.aborted) setSettledRequest(requestKey); });
     return () => controller.abort();
-  }, [pipelineId, filters, revision, tab]);
+  }, [pipelineId, filters, revision, tab, requestKey]);
 
   async function openBatch(id: string) {
     setDetail(null); setDetailError(""); setDetailLoading(true);
